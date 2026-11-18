@@ -53,6 +53,7 @@ public final class HookEntry extends XposedModule {
         observePreferences();
         try {
             installClockHooks();
+            if (systemUi) ShortcutHook.install(this, param.getClassLoader());
             installWindowHook();
         } catch (Throwable t) {
             error("Could not watch windows in " + process + "; module inactive", t);
@@ -220,6 +221,7 @@ public final class HookEntry extends XposedModule {
         WindowScanner[] copy;
         synchronized (scanners) { copy = scanners.toArray(new WindowScanner[0]); }
         for (WindowScanner s : copy) s.configChanged();
+        ShortcutHook.configChanged();
         info("Config: " + config);
     }
 

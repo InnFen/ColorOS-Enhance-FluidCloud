@@ -198,6 +198,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         // Digit keys (bouncer / PIN pad) are off limits.
         Set<View> keypads = findKeypads(tree);
 
+        logStyleClock(tree);
         View clockView = findClock(tree, screenW, screenH, keypads);
         boolean keyguardWindow = clockView != null || aod || KEYGUARD_TITLE.matcher(title).matches();
 
@@ -255,7 +256,10 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
             else if (clockView == null) gate = "paused: no lock screen clock found";
             else gate = "active (clock " + (clockShowing ? "showing" : "faded, no panel open") + ")";
             if (!gate.equals(lastGate)) { lastGate = gate; m.info("Shortcut styling " + gate); }
-            if (gate.startsWith("active")) {
+            if (ShortcutHook.active) {
+                // ColorOS's own button update is hooked (ColorOS 17): the tree-based styler stays out.
+                if (shortcuts != null) { shortcuts.release(); shortcuts = null; }
+            } else if (gate.startsWith("active")) {
                 if (shortcuts == null) shortcuts = new ShortcutStyler(m);
                 shortcuts.apply(tree, screenW, screenH, palette, keypads);
             }
@@ -309,6 +313,49 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
             if (effectivelyVisible(v, 0.3f)) return v;
         }
         return null;
+    }
+
+    private String lastStyleClock = "";
+
+    /**
+     * ColorOS 17 loads the lock screen clock from a plugin into OplusKeyguardStyleClock. Log what that container
+     * holds (classes and sizes only, no text) whenever it changes, to see which view draws the digits.
+     */
+    private void logStyleClock(List<View> tree) {
+        for (View v : tree) {
+            if (!classChain(v).contains("OplusKeyguardStyleClock")) continue;
+            StringBuilder sb = new StringBuilder();
+            int[] n = {0};
+            describeTree(v, 0, sb, n);
+            String log = "Style clock container: " + sb;
+            if (!log.equals(lastStyleClock)) {
+                lastStyleClock = log;
+                for (int i = 0; i < log.length(); i += 3500) m.info(log.substring(i, Math.min(log.length(), i + 3500)));
+            }
+            return;
+        }
+    }
+
+    private void describeTree(View v, int depth, StringBuilder sb, int[] n) {
+        if (n[0]++ > 120 || depth > 12) return;
+        sb.append("\n");
+        for (int i = 0; i < depth; i++) sb.append("  ");
+        Rect r = Views.screen(v);
+        sb.append(v.getClass().getName()).append(" #").append(Views.id(v)).append(' ').append(r.toShortString());
+        if (v.getVisibility() != View.VISIBLE) sb.append(" vis=").append(v.getVisibility());
+        if (v.getAlpha() != 1f) sb.append(" a=").append(String.format(Locale.ROOT, "%.2f", v.getAlpha()));
+        if (v instanceof TextView) {
+            String t = Views.text(v).trim();
+            boolean safe = t.length() <= 12 && t.matches("[\\d:：∶ \\n]*");
+            sb.append(" ts=").append(Math.round(((TextView) v).getTextSize()))
+                    .append(safe ? " text='" + t.replace('\n', '|') + "'" : " text[" + t.length() + "]");
+        }
+        if (v instanceof android.view.SurfaceView) sb.append(" SURFACE");
+        if (v instanceof android.view.TextureView) sb.append(" TEXTURE");
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) describeTree(g.getChildAt(i), depth + 1, sb, n);
+        }
     }
 
     private static String classChain(View v) {
