@@ -17,10 +17,13 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - uses: android-actions/setup-android@v3
-
+      # ubuntu-latest already ships Android cmdline-tools. Avoid
+      # android-actions/setup-android, whose default package list still
+      # includes the retired "tools" package and fails sdkmanager.
       - name: Install Android SDK 37 and Build Tools 37.0.0
-        run: sdkmanager "platforms;android-37" "build-tools;37.0.0"
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-37" "build-tools;37.0.0"
 
       - name: Create a debug signing key
         run: |
