@@ -149,6 +149,8 @@ final class NativeCameraCard {
                      float nativeY, int divider, boolean portrait, boolean unlocked, int gapPx, int manualInset) {
         Plan full = fullPlan(capsule, cutout, width, statusHeight, nativeY, divider, portrait, unlocked, manualInset);
         if (full == null || gapPx < 0) return full;
+        // Theme-style offset: the stock card moves up as a whole and only grows by the gap.
+        if (manualInset > 0) return new Plan(full.translationY(), Math.max(1, gapPx), -1);
         int cardTop = Math.round(nativeY + divider) - full.inset();
         int target = Math.min(full.inset() + Math.max(0, gapPx), cutout.bottom - cardTop + gapPx);
         int header = Math.max(1, Math.min(full.inset(), target));

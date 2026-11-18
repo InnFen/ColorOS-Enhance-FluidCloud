@@ -116,7 +116,7 @@ public final class SettingsCatalog {
                 dev.lsposed.fluidcloud.CameraAvoidance.OFFSET_KEY,dev.lsposed.fluidcloud.CameraAvoidance.DEFAULT_OFFSET_DP,-80,40,1,1,"dp",
                 new Visibility("camera_card_expansion",true),null));
         items.add(new Item("展开卡片",dev.lsposed.fluidcloud.CameraAvoidance.KEY,"内容与摄像头间距",
-                "卡片内容整体上移，只在摄像头下缘与内容最上方之间留出这段距离，不再填满原来的空白。重新展开卡片后生效。",false,
+                "开启「卡片上移到摄像头」时：原厂卡片整体上移，只在顶部多加这段高度，防止摄像头挡住内容。关闭时：内容最上方与摄像头下缘之间留出这段距离。重新展开卡片后生效。",false,
                 dev.lsposed.fluidcloud.CameraAvoidance.KEY,dev.lsposed.fluidcloud.CameraAvoidance.DEFAULT_DP,0,
                 dev.lsposed.fluidcloud.CameraAvoidance.MAX_DP,1,1,"dp",
                 new Visibility("camera_card_expansion",true),null));
