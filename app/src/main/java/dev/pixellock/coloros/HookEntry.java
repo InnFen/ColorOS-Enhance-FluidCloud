@@ -52,6 +52,7 @@ public final class HookEntry extends XposedModule {
         installed = true;
         observePreferences();
         try {
+            hookClockClass(android.widget.TextView.class);
             installWindowHook();
         } catch (Throwable t) {
             error("Could not watch windows in " + process + "; module inactive", t);
@@ -79,6 +80,58 @@ public final class HookEntry extends XposedModule {
         }
         if (hooked == 0) throw new NoSuchMethodException("WindowManagerGlobal.addView");
         info("Watching " + process + " windows (" + hooked + " addView overloads), config: " + config);
+    }
+
+    private final java.util.Set<Method> clockHooks = new java.util.HashSet<>();
+
+    /**
+     * Hooks onDraw / onMeasure of TextView and of the clock's own class chain (in case ColorOS overrides them),
+     * so a bound clock view draws the Pixel clock instead of its text. Unbound views run untouched.
+     */
+    synchronized void hookClockClass(Class<?> cls) {
+        for (Class<?> c = cls; c != null && android.widget.TextView.class.isAssignableFrom(c); c = c.getSuperclass()) {
+            for (Method method : c.getDeclaredMethods()) {
+                Class<?>[] t = method.getParameterTypes();
+                boolean draw = method.getName().equals("onDraw") && t.length == 1 && t[0] == android.graphics.Canvas.class;
+                boolean measure = method.getName().equals("onMeasure") && t.length == 2
+                        && t[0] == int.class && t[1] == int.class;
+                if ((!draw && !measure) || java.lang.reflect.Modifier.isAbstract(method.getModifiers())) continue;
+                if (!clockHooks.add(method)) continue;
+                try {
+                    if (draw) {
+                        hook(method).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept(chain -> {
+                            InPlaceClock.State st = InPlaceClock.get(chain.getThisObject());
+                            if (st == null) return chain.proceed();
+                            try {
+                                InPlaceClock.draw(st, (android.widget.TextView) chain.getThisObject(),
+                                        (android.graphics.Canvas) chain.getArg(0));
+                                return null;
+                            } catch (Throwable e) {
+                                error("Clock draw failed", e);
+                                return chain.proceed();
+                            }
+                        });
+                    } else {
+                        hook(method).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept(chain -> {
+                            Object result = chain.proceed();
+                            InPlaceClock.State st = InPlaceClock.get(chain.getThisObject());
+                            if (st != null) {
+                                try {
+                                    InPlaceClock.measure(st, (android.widget.TextView) chain.getThisObject(),
+                                            (Integer) chain.getArg(0), (Integer) chain.getArg(1));
+                                } catch (Throwable e) {
+                                    error("Clock measure failed", e);
+                                }
+                            }
+                            return result;
+                        });
+                    }
+                    info("Hooked " + c.getName() + "." + method.getName());
+                } catch (Throwable e) {
+                    error("Could not hook " + c.getName() + "." + method.getName(), e);
+                }
+            }
+        }
     }
 
     private void windowAdded(View view, ViewGroup.LayoutParams params) {

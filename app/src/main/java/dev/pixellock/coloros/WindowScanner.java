@@ -50,6 +50,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     private boolean listening;
     private long lastDump;
     private ClockController clock;
+    private TextView inPlace;
     private ShortcutStyler shortcuts;
     private String lastMiss = "";
     private final Runnable scanTask = () -> { scheduled = false; scanSafely(); };
@@ -109,6 +110,12 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     /** A live card in another window appeared, moved or went away: redraw so the clock can make room. */
     void floatingCardsChanged() {
         if (clock != null) handler.post(root::invalidate);
+        if (inPlace != null) handler.post(this::schedule);
+    }
+
+    private static boolean anyShown(List<View> views) {
+        for (View v : views) if (Views.shownOnThisThread(v)) return true;
+        return false;
     }
 
     /** Settings changed: undo disabled features right away, then rescan. Called from any thread. */
@@ -116,6 +123,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         handler.post(() -> {
             Config cfg = m.config;
             if (!cfg.clock && clock != null) { clock.release(); clock = null; }
+            if (!cfg.clock && inPlace != null) { InPlaceClock.release(inPlace); inPlace = null; }
             if (!cfg.shortcuts && shortcuts != null) { shortcuts.release(); shortcuts = null; }
             Fonts.clear();
             lastDump = 0;
@@ -147,6 +155,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         }
         if (aod && !cfg.aod) {
             if (clock != null) { clock.release(); clock = null; }
+            if (inPlace != null) { InPlaceClock.release(inPlace); inPlace = null; }
             return;
         }
 
@@ -162,11 +171,23 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         boolean keyguardWindow = clockView != null || aod || KEYGUARD_TITLE.matcher(title).matches();
 
         if (cfg.clock && clockView != null) {
-            if (clock == null) clock = new ClockController(m, root, aod);
             TextView date = findDate(tree, clockView);
-            clock.setObstacles(cfg.clockAvoid ? findObstacles(tree, clockView, date, screenW, screenH)
-                    : java.util.Collections.emptyList());
-            clock.bind(clockView, date, cfg, palette);
+            boolean compact = cfg.clockAvoid && (!findObstacles(tree, clockView, date, screenW, screenH).isEmpty()
+                    || anyShown(m.floatingCards()));
+            if (clockView instanceof TextView) {
+                // Normal case: ColorOS's clock view itself draws the Pixel clock, so only one clock exists.
+                if (clock != null) { clock.release(); clock = null; }
+                if (inPlace != null && inPlace != clockView) InPlaceClock.release(inPlace);
+                inPlace = (TextView) clockView;
+                InPlaceClock.bind(m, inPlace, date, cfg, palette, compact);
+            } else {
+                // Clocks drawn some other way: overlay fallback.
+                if (inPlace != null) { InPlaceClock.release(inPlace); inPlace = null; }
+                if (clock == null) clock = new ClockController(m, root, aod);
+                clock.setObstacles(cfg.clockAvoid ? findObstacles(tree, clockView, date, screenW, screenH)
+                        : java.util.Collections.emptyList());
+                clock.bind(clockView, date, cfg, palette);
+            }
         } else if (clock != null && cfg.clock && clock.clock() != null && !clock.clock().isAttachedToWindow()) {
             clock.release();
             clock = null;
@@ -175,7 +196,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         // Shortcut buttons are (re)detected only while the lock screen itself is showing, never over the bouncer.
         // The control center can open over the lock screen in the same window, so ask for a clock that is clearly
         // showing (not faded behind a panel) and a locked keyguard; no clock means no restyling at all.
-        boolean lockscreenShowing = clockView != null && effectivelyVisible(clockView, 0.9f) && keyguardLocked();
+        boolean lockscreenShowing = clockView != null && effectivelyVisible(clockView, 0.5f) && keyguardLocked();
         if (cfg.shortcuts && !aod && keyguardWindow && lockscreenShowing && keypads.isEmpty()) {
             if (shortcuts == null) shortcuts = new ShortcutStyler(m);
             shortcuts.apply(tree, screenW, screenH, palette, keypads);
@@ -278,6 +299,8 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     private List<View> findObstacles(List<View> tree, View clockView, TextView date, int screenW, int screenH) {
         List<View> out = new ArrayList<>();
         float minH = Views.dp(root, 36);
+        // Only things below the clock's top count (the status bar area above it never pushes the clock).
+        int clockTop = Views.screen(clockView).top;
         for (View v : tree) {
             if (v == root || v == clockView || v == date) continue;
             if (v.getWidth() < screenW * 0.55f || v.getHeight() < minH || v.getHeight() > screenH * 0.45f) continue;
@@ -288,7 +311,8 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
                     || name.contains("fluid") || name.contains("live") || name.contains("capsule");
             if (!hinted && !hasVisibleBackground(v)) continue;
             Rect r = Views.screen(v);
-            if (r.top > screenH * 0.85f) continue;
+            if (r.top > screenH * 0.85f || r.top < clockTop) continue;
+            if (!Views.shownOnThisThread(v)) continue;
             boolean nested = false;
             for (View o : out) if (Views.isAncestor(o, v)) { nested = true; break; }
             if (!nested) out.add(v);

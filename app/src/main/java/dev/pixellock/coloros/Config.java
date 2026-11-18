@@ -8,7 +8,8 @@ public final class Config {
 
     public static final String CLOCK = "clock_enabled";
     public static final String CLOCK_SCALE = "clock_scale";
-    public static final String CLOCK_OFFSET = "clock_offset_dp";
+    // New key: the clock now sits where ColorOS puts it, so earlier offsets (tuned for the overlay) start over at 0.
+    public static final String CLOCK_OFFSET = "clock_offset_v2_dp";
     public static final String CLOCK_ROUND = "clock_round";
     public static final String CLOCK_RESERVE = "clock_reserve";
     public static final String CLOCK_DATE = "clock_date";

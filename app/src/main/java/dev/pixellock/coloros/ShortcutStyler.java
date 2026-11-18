@@ -33,10 +33,13 @@ final class ShortcutStyler {
     private static final String[] FOREIGN = {
             "qs", "quicksetting", "controlcenter", "control_center", "controlpanel", "control_panel", "tile",
             "media", "brightness", "myfc", "recyclerview", "viewpager", "gridlayout", "gridview", "listview",
-            "volume", "scroll", "picker", "edit", "list", "grid", "pager", "recycler", "adapter", "drawer",
+            "volume", "picker",
     };
 
+    private static int rejectedForeign, rejectedLabel, rejectedCrowded;
+
     void apply(List<View> tree, int screenW, int screenH, Palette p, Set<View> exclude) {
+        rejectedForeign = rejectedLabel = rejectedCrowded = 0;
         // Pass 1: clickable views. Pass 2 (only for a side still empty): views with a background or an icon,
         // for buttons that react to touch listeners without being "clickable".
         View[] strict = pick(tree, screenW, screenH, exclude, true);
@@ -57,7 +60,9 @@ final class ShortcutStyler {
         if (right != null) rightBg = style(right, rightBg, p);
         String log = "Shortcuts: left=" + (left == null ? "none" : Views.describe(left))
                 + " | right=" + (right == null ? "none" : Views.describe(right))
-                + " | bg " + Palette.hex(p.shortcutBg) + " icon " + Palette.hex(p.shortcutIcon);
+                + " | bg " + Palette.hex(p.shortcutBg) + " icon " + Palette.hex(p.shortcutIcon)
+                + " | skipped: " + rejectedForeign + " in panels, " + rejectedLabel + " labelled, "
+                + rejectedCrowded + " in tile rows";
         if (!log.equals(lastLog)) { lastLog = log; m.info(log); }
     }
 
@@ -75,7 +80,8 @@ final class ShortcutStyler {
             if (excluded(v, exclude) || hasDigit(v)) continue;
             Rect r = Views.screen(v);
             if (r.centerY() < screenH * 0.78f) continue;
-            if (insideForeign(v) || hasLabel(v) || insideScrollable(v)) continue;
+            if (insideForeign(v)) { rejectedForeign++; continue; }
+            if (hasLabel(v)) { rejectedLabel++; continue; }
             // Prefer the outermost match: skip views inside an already chosen one.
             if (newLeft != null && Views.isAncestor(newLeft, v)) continue;
             if (newRight != null && Views.isAncestor(newRight, v)) continue;
@@ -90,13 +96,13 @@ final class ShortcutStyler {
         }
         // Lock screen shortcuts stand alone in their row (the fingerprint button may sit between them). A row of
         // three or more look-alike buttons is a grid of tiles, e.g. a control center, so leave it alone.
-        if (newLeft != null && crowdedRow(tree, newLeft)) newLeft = null;
-        if (newRight != null && crowdedRow(tree, newRight)) newRight = null;
+        if (newLeft != null && crowdedRow(tree, newLeft)) { newLeft = null; rejectedCrowded++; }
+        if (newRight != null && crowdedRow(tree, newRight)) { newRight = null; rejectedCrowded++; }
         return new View[]{newLeft, newRight};
     }
 
     private static boolean stillLockscreenButton(View v) {
-        return !insideForeign(v) && !hasLabel(v) && !insideScrollable(v);
+        return !insideForeign(v) && !hasLabel(v);
     }
 
     /** Lock screen shortcuts are bare icons. Control center tiles and picker items carry a text label. */
@@ -116,20 +122,6 @@ final class ShortcutStyler {
                 Rect r = Views.screen(c);
                 if (r.top >= b.bottom - b.height() * 0.2f && r.top - b.bottom < b.height() * 0.6f) return true;
             }
-        }
-        return false;
-    }
-
-    /** Lists and pagers (control center editors, pickers) scroll; the lock screen bottom area does not. */
-    private static boolean insideScrollable(View v) {
-        ViewParent p = v.getParent();
-        while (p instanceof View) {
-            View g = (View) p;
-            if (g.canScrollVertically(1) || g.canScrollVertically(-1)
-                    || g.canScrollHorizontally(1) || g.canScrollHorizontally(-1)) return true;
-            if (g instanceof android.widget.AdapterView || g instanceof android.widget.ScrollView
-                    || g instanceof android.widget.HorizontalScrollView) return true;
-            p = g.getParent();
         }
         return false;
     }
