@@ -65,7 +65,7 @@ final class CameraCardExpansion {
             try {
                 NativeCameraCard nativeCard = new NativeCameraCard(loader);
                 nativeCard.onFailure = this::geometryFailed;
-                nativeCard.avoidPercent = () -> module.cameraAvoidPercent;
+                nativeCard.gapDp = () -> module.cameraGapDp;
                 nativeCard.onInfo = module::info;
                 NativeCardCorners corners = new NativeCardCorners(() -> module.config.corners().card());
                 int cornerHooks = hooks.size();

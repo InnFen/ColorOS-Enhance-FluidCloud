@@ -46,15 +46,20 @@ final class NativeCameraCard {
     private final WeakHashMap<ViewGroup, android.view.ViewTreeObserver.OnPreDrawListener> ownershipChecks = new WeakHashMap<>();
     private final WeakHashMap<View, String> frameTraces = new WeakHashMap<>();
     java.util.function.Consumer<Throwable> onFailure = error -> { };
-    /** Share (0..100) of the below-camera header space to keep; 100 is the original geometry. */
-    java.util.function.IntSupplier avoidPercent = () -> 100;
+    /** dp between the camera cutout and the first visible content; negative keeps the original geometry. */
+    java.util.function.IntSupplier gapDp = () -> -1;
     java.util.function.Consumer<String> onInfo = message -> { };
     private String lastAvoidLog;
     private final NativeCardMaterial materials = new NativeCardMaterial();
     private final WeakHashMap<View, Elevation> elevations = new WeakHashMap<>();
     private final java.util.Set<View> mutedBlur = java.util.Collections.newSetFromMap(new WeakHashMap<>());
     private boolean aligning;
-    private record Position(float nativeY, float appliedY, int inset) { }
+    private record Position(float nativeY, float appliedY, int inset, int target) {
+        Position(float nativeY, float appliedY, int inset) { this(nativeY, appliedY, inset, -1); }
+    }
+    /** Header actually applied to each first card, which may differ from the container plan once its content is measured. */
+    private final WeakHashMap<View, Integer> cardInsets = new WeakHashMap<>();
+    private final WeakHashMap<View, Integer> leads = new WeakHashMap<>();
     private record Margin(int nativeTop, int appliedTop) { }
     private record Clip(boolean children, boolean padding, boolean outline, boolean ownsOutline) { }
     private record Backdrop(Rect nativeBounds, Rect appliedBounds, boolean fillsParent) { }
@@ -62,7 +67,10 @@ final class NativeCameraCard {
     private record Decorations(CardHeaderDrawable background, CardHeaderDrawable foreground) { }
     private record MaterialOutline(android.view.ViewOutlineProvider provider, Rect mask, int width, int height) { }
     private record External(int inset, Rect camera) { }
-    record Plan(float translationY, int inset) { }
+    /** target: px from the card top to the first visible content, or -1 for the original geometry. */
+    record Plan(float translationY, int inset, int target) {
+        Plan(float translationY, int inset) { this(translationY, inset, -1); }
+    }
     record Morph(Rect mask, float translationY) { }
 
     NativeCameraCard(ClassLoader loader) throws ReflectiveOperationException {
@@ -127,18 +135,20 @@ final class NativeCameraCard {
     /** The header grows by the same amount the native container moves up: content stays clear. */
     static Plan plan(Rect capsule, Rect cutout, int width, int statusHeight,
                      float nativeY, int divider, boolean portrait, boolean unlocked) {
-        return plan(capsule, cutout, width, statusHeight, nativeY, divider, portrait, unlocked, 100);
+        return plan(capsule, cutout, width, statusHeight, nativeY, divider, portrait, unlocked, -1);
     }
     /**
-     * The card top still moves to the capsule top (camera anchor), but only part of the
-     * original header space is kept, so the content moves up closer to the camera.
+     * The card top still moves to the capsule top (camera anchor). With {@code gapPx >= 0}
+     * the content is pulled up so its first visible element sits {@code gapPx} below the
+     * camera cutout; the header never exceeds the original space.
      */
     static Plan plan(Rect capsule, Rect cutout, int width, int statusHeight,
-                     float nativeY, int divider, boolean portrait, boolean unlocked, int avoidPercent) {
+                     float nativeY, int divider, boolean portrait, boolean unlocked, int gapPx) {
         Plan full = fullPlan(capsule, cutout, width, statusHeight, nativeY, divider, portrait, unlocked);
-        if (full == null || avoidPercent >= 100) return full;
-        int applied = CameraAvoidance.apply(full.inset(), avoidPercent);
-        return new Plan(full.translationY(), applied);
+        if (full == null || gapPx < 0) return full;
+        int target = Math.min(full.inset() + Math.max(0, gapPx), cutout.bottom - capsule.top + gapPx);
+        int header = Math.max(1, Math.min(full.inset(), target));
+        return new Plan(full.translationY(), header, Math.max(1, target));
     }
     private static Plan fullPlan(Rect capsule, Rect cutout, int width, int statusHeight,
                      float nativeY, int divider, boolean portrait, boolean unlocked) {
@@ -183,20 +193,22 @@ final class NativeCameraCard {
         int divider = dividerOverride < 0 ? resources.getDimensionPixelSize(dividerId) : dividerOverride;
         boolean portrait = resources.getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
         boolean unlocked = keyguard != null && !keyguard.isKeyguardLocked();
-        int percent = avoidPercent.getAsInt();
-        Plan plan = plan(capsule, cameraRect, width, status, nativeY, divider, portrait, unlocked, percent);
-        if (plan != null) logAvoidance(capsule, cameraRect, plan, nativeY, percent, resources.getDisplayMetrics().density);
+        int dp = gapDp.getAsInt();
+        float density = resources.getDisplayMetrics().density;
+        int gapPx = dp < 0 ? -1 : Math.round(dp * density);
+        Plan plan = plan(capsule, cameraRect, width, status, nativeY, divider, portrait, unlocked, gapPx);
+        if (plan != null) logAvoidance(capsule, cameraRect, plan, nativeY, dp, density);
         return plan;
     }
     /** One log line per distinct geometry, so the actual dp values can be read in the LSPosed log. */
-    private void logAvoidance(Rect capsule, Rect camera, Plan plan, float nativeY, int percent, float density) {
+    private void logAvoidance(Rect capsule, Rect camera, Plan plan, float nativeY, int dp, float density) {
         if (capsule == null || camera == null || density <= 0) return;
         // translationY = nativeY - original header space, see fullPlan().
         int original = Math.round(nativeY - plan.translationY());
         String message = String.format(java.util.Locale.ROOT,
-                "Camera card avoidance %d%%: original %dpx (%.1fdp) -> applied %dpx (%.1fdp); camera bottom %.1fdp below capsule top",
-                percent, original, original / density, plan.inset(), plan.inset() / density,
-                (camera.bottom - capsule.top) / density);
+                "Camera card avoidance gap %ddp: original header %dpx (%.1fdp), header %dpx (%.1fdp), content target %dpx (%.1fdp); camera bottom %.1fdp below capsule top",
+                dp, original, original / density, plan.inset(), plan.inset() / density,
+                plan.target(), plan.target() / density, (camera.bottom - capsule.top) / density);
         if (message.equals(lastAvoidLog)) return;
         lastAvoidLog = message;
         try { onInfo.accept(message); } catch (RuntimeException ignored) { }
@@ -206,7 +218,7 @@ final class NativeCameraCard {
         float nativeY = container.getTranslationY();
         Plan plan = enabled ? geometry(container, nativeY) : null;
         positions.put(container, new Position(nativeY, plan == null ? nativeY : plan.translationY(),
-                plan == null ? 0 : plan.inset()));
+                plan == null ? 0 : plan.inset(), plan == null ? -1 : plan.target()));
         if (plan != null) container.setTranslationY(plan.translationY());
         updateChildren(container, enabled);
         if (!ownershipChecks.containsKey(container)) {
@@ -232,7 +244,7 @@ final class NativeCameraCard {
             View body = (View) Reflect.get(content, card);
             int before = body != null && body.getLayoutParams() instanceof FrameLayout.LayoutParams p ? p.topMargin : 0;
             int inset = itemPosition(container, card) == 0 ? position.inset() : 0;
-            adjustContent(card, inset);
+            adjustContent(card, inset, inset == 0 ? -1 : position.target());
             if (inset == 0) { morphMasks.remove(card); restoreSurface(card); restoreBackgrounds(card); }
             else {
                 // Child-only invalidations can reuse CardView's display list,
@@ -254,19 +266,20 @@ final class NativeCameraCard {
         if (container == null) {
             // A scrapped holder can be measured between detach/reattach. Absence of
             // its parent is not a confirmed move away from the first list slot.
-            if (!enabled) adjustContent(card, 0);
+            if (!enabled) adjustContent(card, 0, -1);
             return;
         }
         Position position = positions.get(container);
         if (position != null) {
             Plan plan = enabled ? geometry(container, position.nativeY()) : null;
             position = new Position(position.nativeY(), plan == null ? position.nativeY() : plan.translationY(),
-                    plan == null ? 0 : plan.inset());
+                    plan == null ? 0 : plan.inset(), plan == null ? -1 : plan.target());
             positions.put(container, position);
             if (container.getTranslationY() != position.appliedY()) container.setTranslationY(position.appliedY());
         }
         int index = enabled ? itemPosition(container, card) : -1;
-        adjustContent(card, enabled && position != null && index == 0 ? position.inset() : 0);
+        boolean first = enabled && position != null && index == 0;
+        adjustContent(card, first ? position.inset() : 0, first ? position.target() : -1);
     }
     int intrinsicHeight(View card, int nativeHeight, boolean enabled) {
         if (!enabled || nativeHeight <= 0 || !cardType.isInstance(card)) return nativeHeight;
@@ -493,19 +506,27 @@ final class NativeCameraCard {
             if (cardType.isInstance(card)) beforeMeasure(card, enabled);
         }
     }
-    private void adjustContent(View card, int inset) {
+    private void adjustContent(View card, int inset, int target) {
         View child = (View) Reflect.get(content, card);
         if (child == null || !(child.getLayoutParams() instanceof FrameLayout.LayoutParams params)) return;
         Margin previous = margins.get(child);
         int nativeTop = previous != null && params.topMargin == previous.appliedTop()
                 ? previous.nativeTop() : params.topMargin;
         int top = nativeTop + inset;
+        if (inset > 0 && target >= 0) {
+            // Place the first visible element at the target, never lower than the original.
+            Integer lead = leads.get(card);
+            top = Math.min(nativeTop + inset, CameraAvoidance.boxTop(target, lead == null ? -1 : lead));
+        }
         if (params.topMargin != top) {
             params.topMargin = top;
             child.setLayoutParams(params);
         }
-        if (inset == 0) margins.remove(child);
-        else margins.put(child, new Margin(nativeTop, top));
+        if (inset == 0) { margins.remove(child); cardInsets.remove(card); }
+        else {
+            margins.put(child, new Margin(nativeTop, top));
+            cardInsets.put(card, Math.max(1, top - nativeTop));
+        }
     }
     void afterLayout(View card, boolean enabled) {
         ViewParent parent = card.getParent();
@@ -514,6 +535,14 @@ final class NativeCameraCard {
         int inset = enabled && position != null && itemPosition(parent, card) == 0
                 ? position.inset() : 0;
         View child = (View) Reflect.get(content, card);
+        if (inset > 0 && child instanceof ViewGroup body) {
+            int lead = CameraAvoidance.lead(body, 0);
+            if (lead >= 0 && !Integer.valueOf(lead).equals(leads.put(card, lead)) && position.target() >= 0) {
+                onInfo.accept("Camera card content lead " + lead + "px");
+                card.post(card::requestLayout);
+            }
+            inset = cardInsets.getOrDefault(card, inset);
+        }
         if (inset <= 0) { restoreBackgrounds(card); removeHeader(card); return; }
         ArrayList<View> layers = new ArrayList<>();findDecorativeBackgrounds(child, child, layers);
         for (View background : layers) {
@@ -958,6 +987,6 @@ final class NativeCameraCard {
                 params.topMargin = margin.nativeTop(); child.setLayoutParams(params);
             }
         }
-        margins.clear();
+        margins.clear(); cardInsets.clear(); leads.clear();
     }
 }

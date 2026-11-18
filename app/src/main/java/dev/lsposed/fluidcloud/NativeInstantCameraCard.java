@@ -23,6 +23,7 @@ final class NativeInstantCameraCard {
     private final WeakHashMap<ViewGroup, android.view.ViewTreeObserver.OnPreDrawListener> touchChecks = new WeakHashMap<>();
     private boolean preparingScene;
     private String lastNote;
+    private final java.util.Set<View> remeasure = java.util.Collections.newSetFromMap(new WeakHashMap<>());
     private record Owned(java.lang.ref.WeakReference<ViewGroup> container, int nativeTop, int appliedTop,
                          int nativePadding, int appliedPadding, int inset, Rect camera) { }
     NativeInstantCameraCard(NativeCameraCard.Lookup lookup, NativeCameraCard cards) throws ReflectiveOperationException {
@@ -120,14 +121,27 @@ final class NativeInstantCameraCard {
         if (plan == null || camera == null || camera.isEmpty()) { release(view); return; }
         int top = Math.round(plan.translationY() - container.getTranslationY());
         int padding = nativePadding + plan.inset();
-        String note = "Instant camera card: native top padding " + nativePadding + "px, header " + plan.inset() + "px";
+        int lead = -1;
+        if (plan.target() >= 0) {
+            // Pull the content up: its first visible element goes to the target below the camera.
+            lead = CameraAvoidance.lead(view, view.getPaddingTop());
+            padding = Math.min(padding, CameraAvoidance.boxTop(plan.target(), lead));
+            if (lead < 0 && remeasure.add(view)) view.post(() -> {
+                remeasure.remove(view);
+                if (Boolean.TRUE.equals(containers.get(container)) && owned.containsKey(view)
+                        && CameraAvoidance.lead(view, view.getPaddingTop()) >= 0) update(container, true);
+            });
+        }
+        int inset = Math.max(1, padding - nativePadding);
+        String note = "Instant camera card: native top padding " + nativePadding + "px, content lead " + lead
+                + "px, padding " + padding + "px, target " + plan.target() + "px";
         if (!note.equals(lastNote)) { lastNote = note; try { cards.onInfo.accept(note); } catch (RuntimeException ignored) { } }
         owned.put(view, new Owned(new java.lang.ref.WeakReference<>(container), nativeTop, top,
-                nativePadding, padding, plan.inset(), new Rect(camera)));
+                nativePadding, padding, inset, new Rect(camera)));
         if (params.topMargin != top) { params.topMargin = top; view.setLayoutParams(params); }
         if (view.getPaddingTop() != padding)
             view.setPadding(view.getPaddingLeft(), padding, view.getPaddingRight(), view.getPaddingBottom());
-        cards.prepareInstant(view, plan.inset(), camera);
+        cards.prepareInstant(view, inset, camera);
         observeTouch(container);
         // Keep outgoing native views adapted while their own disappear animation
         // runs. A replacement small capsule must never receive this geometry.
