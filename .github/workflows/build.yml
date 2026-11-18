@@ -1,12 +1,12 @@
 # Builds the module APK on GitHub's servers.
 # Push this source to your own GitHub repository, open Actions, pick "Build APK" and press "Run workflow"
-# (it also runs on every push). The APK is in the run's Artifacts.
+# (it also runs on every push to the pixel-lockscreen branch). The APK is in the run's Artifacts.
 name: Build APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [pixel-lockscreen]
 
 jobs:
   build:

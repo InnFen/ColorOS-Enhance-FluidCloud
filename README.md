@@ -17,7 +17,7 @@
 這個環境沒辦法直接出 APK，用 GitHub Actions 編：
 
 1. 把整個資料夾推到你自己的 GitHub repo（私人也行）。
-2. 打開 repo 的 **Actions** → **Build APK** → **Run workflow**（推送到 main 也會自動跑）。
+2. 打開 repo 的 **Actions** → **Build APK** → **Run workflow**（推送到 pixel-lockscreen 分支也會自動跑）。
 3. 跑完後在該次執行的 **Artifacts** 下載 `pixel-lockscreen-apk`，解壓得到 APK。
 
 每次執行預設會產生新的簽名金鑰，所以更新時要先解除安裝舊版。想直接覆蓋安裝，就自己產一個 PKCS12 金鑰，在 repo 的 Settings → Secrets 加上 `DEBUG_KEYSTORE_B64`（金鑰檔 base64）和 `DEBUG_KEYSTORE_PASSWORD`，別名用 `pixellock`。
