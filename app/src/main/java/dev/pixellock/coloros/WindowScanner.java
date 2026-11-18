@@ -173,7 +173,9 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         }
 
         // Shortcut buttons are (re)detected only while the lock screen itself is showing, never over the bouncer.
-        boolean lockscreenShowing = clockView != null ? effectivelyVisible(clockView) : keyguardWindow;
+        // The control center can open over the lock screen in the same window, so ask for a clock that is clearly
+        // showing (not faded behind a panel) and a locked keyguard; no clock means no restyling at all.
+        boolean lockscreenShowing = clockView != null && effectivelyVisible(clockView, 0.9f) && keyguardLocked();
         if (cfg.shortcuts && !aod && keyguardWindow && lockscreenShowing && keypads.isEmpty()) {
             if (shortcuts == null) shortcuts = new ShortcutStyler(m);
             shortcuts.apply(tree, screenW, screenH, palette, keypads);
@@ -191,7 +193,18 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     }
 
     /** Alpha product up the parents; true when the view would actually be seen. */
-    private boolean effectivelyVisible(View v) {
+    private boolean effectivelyVisible(View v) { return effectivelyVisible(v, 0.3f); }
+
+    private boolean keyguardLocked() {
+        try {
+            android.app.KeyguardManager km = root.getContext().getSystemService(android.app.KeyguardManager.class);
+            return km == null || km.isKeyguardLocked();
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    private boolean effectivelyVisible(View v, float min) {
         if (!v.isShown()) return false;
         float alpha = 1f;
         View cur = v;
@@ -201,7 +214,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
             ViewParent p = cur.getParent();
             cur = p instanceof View ? (View) p : null;
         }
-        return alpha > 0.3f;
+        return alpha > min;
     }
 
     private Set<View> findKeypads(List<View> tree) {
