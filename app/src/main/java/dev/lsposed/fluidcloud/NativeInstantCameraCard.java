@@ -119,6 +119,8 @@ final class NativeInstantCameraCard {
         NativeCameraCard.Plan plan = cards.instantGeometry(container, nativeTop + container.getTranslationY());
         Rect camera = cards.cameraAnchor(container);
         if (plan == null || camera == null || camera.isEmpty()) { release(view); return; }
+        // The expand morph is anchored at the card top, which a theme-style offset moves off the capsule.
+        camera.offset(0, plan.anchorDy());
         int top = Math.round(plan.translationY() - container.getTranslationY());
         int padding = nativePadding + plan.inset();
         int lead = -1;

@@ -57,8 +57,8 @@ final class NativeCameraCard {
     private final WeakHashMap<View, Elevation> elevations = new WeakHashMap<>();
     private final java.util.Set<View> mutedBlur = java.util.Collections.newSetFromMap(new WeakHashMap<>());
     private boolean aligning;
-    private record Position(float nativeY, float appliedY, int inset, int target) {
-        Position(float nativeY, float appliedY, int inset) { this(nativeY, appliedY, inset, -1); }
+    private record Position(float nativeY, float appliedY, int inset, int target, int anchorDy) {
+        Position(float nativeY, float appliedY, int inset) { this(nativeY, appliedY, inset, -1, 0); }
     }
     /** Header actually applied to each first card, which may differ from the container plan once its content is measured. */
     private final WeakHashMap<View, Integer> cardInsets = new WeakHashMap<>();
@@ -71,8 +71,10 @@ final class NativeCameraCard {
     private record MaterialOutline(android.view.ViewOutlineProvider provider, Rect mask, int width, int height) { }
     private record External(int inset, Rect camera) { }
     /** target: px from the card top to the first visible content, or -1 for the original geometry. */
-    record Plan(float translationY, int inset, int target) {
-        Plan(float translationY, int inset) { this(translationY, inset, -1); }
+    /** anchorDy: card top minus capsule top; the expand morph starts and ends at the card top. */
+    record Plan(float translationY, int inset, int target, int anchorDy) {
+        Plan(float translationY, int inset) { this(translationY, inset, -1, 0); }
+        Plan(float translationY, int inset, int target) { this(translationY, inset, target, 0); }
     }
     record Morph(Rect mask, float translationY) { }
 
@@ -149,9 +151,9 @@ final class NativeCameraCard {
                      float nativeY, int divider, boolean portrait, boolean unlocked, int gapPx, int manualInset) {
         Plan full = fullPlan(capsule, cutout, width, statusHeight, nativeY, divider, portrait, unlocked, manualInset);
         if (full == null || gapPx < 0) return full;
-        // Theme-style offset: the stock card moves up as a whole and only grows by the gap.
-        if (manualInset > 0) return new Plan(full.translationY(), Math.max(1, gapPx), -1);
         int cardTop = Math.round(nativeY + divider) - full.inset();
+        // Theme-style offset: the stock card moves up as a whole and only grows by the gap.
+        if (manualInset > 0) return new Plan(full.translationY(), Math.max(1, gapPx), -1, cardTop - capsule.top);
         int target = Math.min(full.inset() + Math.max(0, gapPx), cutout.bottom - cardTop + gapPx);
         int header = Math.max(1, Math.min(full.inset(), target));
         return new Plan(full.translationY(), header, Math.max(1, target));
@@ -252,7 +254,7 @@ final class NativeCameraCard {
         float nativeY = container.getTranslationY();
         Plan plan = enabled ? geometry(container, nativeY) : null;
         positions.put(container, new Position(nativeY, plan == null ? nativeY : plan.translationY(),
-                plan == null ? 0 : plan.inset(), plan == null ? -1 : plan.target()));
+                plan == null ? 0 : plan.inset(), plan == null ? -1 : plan.target(), plan == null ? 0 : plan.anchorDy()));
         if (plan != null) container.setTranslationY(plan.translationY());
         updateChildren(container, enabled);
         if (!ownershipChecks.containsKey(container)) {
@@ -307,7 +309,7 @@ final class NativeCameraCard {
         if (position != null) {
             Plan plan = enabled ? geometry(container, position.nativeY()) : null;
             position = new Position(position.nativeY(), plan == null ? position.nativeY() : plan.translationY(),
-                    plan == null ? 0 : plan.inset(), plan == null ? -1 : plan.target());
+                    plan == null ? 0 : plan.inset(), plan == null ? -1 : plan.target(), plan == null ? 0 : plan.anchorDy());
             positions.put(container, position);
             if (container.getTranslationY() != position.appliedY()) container.setTranslationY(position.appliedY());
         }
@@ -352,7 +354,10 @@ final class NativeCameraCard {
         ViewGroup container = (ViewGroup) card.getParent(); Position position = positions.get(container);
         if (position == null || position.inset() <= 0 || itemPosition(container, card) != 0) return null;
         ViewGroup root = root(container);
-        return root == null ? null : new Rect((Rect) Reflect.get(capsuleRect, root));
+        if (root == null) return null;
+        Rect anchor = new Rect((Rect) Reflect.get(capsuleRect, root));
+        anchor.offset(0, position.anchorDy());
+        return anchor;
     }
     private Morph morphFor(View card, Rect mask, boolean enabled) {
         Rect camera = cameraFor(card, enabled);
