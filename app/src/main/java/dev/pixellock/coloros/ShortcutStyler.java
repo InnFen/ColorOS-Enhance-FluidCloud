@@ -2,15 +2,19 @@ package dev.pixellock.coloros;
 
 import android.graphics.Rect;
 import android.view.View;
+import android.view.ViewParent;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
  * Finds the two lock screen shortcut buttons (bottom-left / bottom-right, e.g. flashlight and camera) and gives
- * them a solid circle in the system accent tone with a dark icon, like the fingerprint button.
+ * them a solid circle in a pale system accent tone, like the fingerprint button, with an icon that turns dark or
+ * light to match. Anything inside quick settings / control center containers or a grid of tiles is never touched.
  */
 final class ShortcutStyler {
     private final HookEntry m;
@@ -20,6 +24,17 @@ final class ShortcutStyler {
     private String lastLog = "";
 
     ShortcutStyler(HookEntry m) { this.m = m; }
+
+    /**
+     * Words in class or id names of containers that are never the lock screen bottom area: quick settings,
+     * control center (including third-party ones like myfc), media players, lists and grids of tiles.
+     * ("notification" is not here: on AOSP-based builds the bottom area itself sits inside NotificationPanelView.)
+     */
+    private static final String[] FOREIGN = {
+            "qs", "quicksetting", "controlcenter", "control_center", "controlpanel", "control_panel", "tile",
+            "media", "brightness", "myfc", "recyclerview", "viewpager", "gridlayout", "gridview", "listview",
+            "volume",
+    };
 
     void apply(List<View> tree, int screenW, int screenH, Palette p, Set<View> exclude) {
         // Pass 1: clickable views. Pass 2 (only for a side still empty): views with a background or an icon,
@@ -60,6 +75,7 @@ final class ShortcutStyler {
             if (excluded(v, exclude) || hasDigit(v)) continue;
             Rect r = Views.screen(v);
             if (r.centerY() < screenH * 0.78f) continue;
+            if (insideForeign(v)) continue;
             // Prefer the outermost match: skip views inside an already chosen one.
             if (newLeft != null && Views.isAncestor(newLeft, v)) continue;
             if (newRight != null && Views.isAncestor(newRight, v)) continue;
@@ -72,13 +88,48 @@ final class ShortcutStyler {
                 if (d < bestRight) { bestRight = d; newRight = v; }
             }
         }
+        // Lock screen shortcuts stand alone in their row (the fingerprint button may sit between them). A row of
+        // three or more look-alike buttons is a grid of tiles, e.g. a control center, so leave it alone.
+        if (newLeft != null && crowdedRow(tree, newLeft)) newLeft = null;
+        if (newRight != null && crowdedRow(tree, newRight)) newRight = null;
         return new View[]{newLeft, newRight};
+    }
+
+    private static boolean insideForeign(View v) {
+        View cur = v;
+        while (cur != null) {
+            String cls = cur.getClass().getName().toLowerCase(Locale.ROOT);
+            String id = Views.id(cur).toLowerCase(Locale.ROOT);
+            for (String word : FOREIGN) {
+                if (cls.contains(word) || id.contains(word)) return true;
+            }
+            ViewParent parent = cur.getParent();
+            cur = parent instanceof View ? (View) parent : null;
+        }
+        return false;
+    }
+
+    private static boolean crowdedRow(List<View> tree, View button) {
+        Rect b = Views.screen(button);
+        List<View> same = new ArrayList<>();
+        for (View v : tree) {
+            if (v == button || Views.isAncestor(v, button) || Views.isAncestor(button, v)) continue;
+            if (!(v.isClickable() || v.getBackground() != null)) continue;
+            if (Math.abs(v.getWidth() - b.width()) > b.width() * 0.25f
+                    || Math.abs(v.getHeight() - b.height()) > b.height() * 0.25f) continue;
+            Rect r = Views.screen(v);
+            if (Math.abs(r.centerY() - b.centerY()) > b.height() * 0.4f) continue;
+            boolean nested = false;
+            for (View o : same) if (Views.isSelfOrAncestor(o, v) || Views.isAncestor(v, o)) { nested = true; break; }
+            if (!nested) same.add(v);
+        }
+        return same.size() >= 3;
     }
 
     private MorphKeyDrawable style(View button, MorphKeyDrawable bg, Palette p) {
         boolean active = isActive(button);
         int color = active ? p.shortcutBgActive : p.shortcutBg;
-        int pressed = active ? p.shortcutBg : p.shortcutBgActive;
+        int pressed = p.shortcutPressed(active);
         int icon = active ? p.shortcutIconActive : p.shortcutIcon;
         if (bg == null) bg = new MorphKeyDrawable(color, pressed, 0.3f);
         bg.setColors(color, pressed);
@@ -91,7 +142,12 @@ final class ShortcutStyler {
                 restorer.clearBackground(d);
             }
         }
-        for (ImageView iv : Views.images(button)) restorer.tint(iv, icon);
+        for (ImageView iv : Views.images(button)) {
+            // A child icon gets tinted through its layer, which ColorOS can't reset. If the button itself is the
+            // ImageView (background and icon on one view), tint the drawable and re-check it every scan.
+            if (iv == button) restorer.enforceDrawableTint(iv, icon);
+            else { restorer.tint(iv, icon); restorer.tintLayer(iv, icon); }
+        }
         for (TextView tv : Views.texts(button)) restorer.text(tv, icon, null);
         return bg;
     }

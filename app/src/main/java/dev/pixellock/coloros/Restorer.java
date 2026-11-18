@@ -2,6 +2,7 @@ package dev.pixellock.coloros;
 
 import android.content.res.ColorStateList;
 import android.graphics.ColorFilter;
+import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.Typeface;
@@ -20,6 +21,7 @@ final class Restorer {
         boolean filterSaved; ColorFilter filter; ColorStateList tint;
         boolean textSaved; ColorStateList textColors; Typeface typeface;
         boolean visSaved; int visibility;
+        boolean layerSaved; int layerType; int layerColor;
     }
 
     private final Map<View, Saved> saved = new WeakHashMap<>();
@@ -56,6 +58,31 @@ final class Restorer {
         v.setColorFilter(new Tagged(color));
     }
 
+    /**
+     * Recolors a whole icon view through its render layer. Unlike a drawable color filter, ColorOS can't undo this
+     * by resetting the icon (it does on some state changes), and it also works for animated (Lottie) icons.
+     * Only for views that carry no background of ours.
+     */
+    void tintLayer(View v, int color) {
+        Saved s = of(v);
+        if (s.layerSaved && s.layerColor == color && v.getLayerType() == View.LAYER_TYPE_HARDWARE) return;
+        if (!s.layerSaved) { s.layerType = v.getLayerType(); s.layerSaved = true; }
+        s.layerColor = color;
+        Paint paint = new Paint();
+        paint.setColorFilter(new Tagged(color));
+        v.setLayerType(View.LAYER_TYPE_HARDWARE, paint);
+    }
+
+    /** Re-applies our filter to the icon drawable itself if ColorOS replaced it there. */
+    void enforceDrawableTint(ImageView v, int color) {
+        tint(v, color);
+        Drawable d = v.getDrawable();
+        if (d == null) return;
+        ColorFilter cf = d.getColorFilter();
+        if (cf instanceof Tagged && ((Tagged) cf).color == color) return;
+        d.mutate().setColorFilter(new Tagged(color));
+    }
+
     void text(TextView v, int color, Typeface face) {
         boolean colorOk = v.getCurrentTextColor() == color && v.getTextColors().isStateful() == false;
         boolean faceOk = face == null || v.getTypeface() == face;
@@ -88,6 +115,7 @@ final class Restorer {
                 ((TextView) v).setTypeface(s.typeface);
             }
             if (s.visSaved) v.setVisibility(s.visibility);
+            if (s.layerSaved) v.setLayerType(s.layerType, null);
         }
         saved.clear();
     }

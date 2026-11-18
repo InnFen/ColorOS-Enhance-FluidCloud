@@ -18,19 +18,46 @@ final class Palette {
     private static volatile int version;
     private static boolean listening;
 
-    private Palette(Context c) {
+    /** accent1 tones the shortcut buttons can use, light to dark. */
+    static final int[] TONES = {
+            android.R.color.system_accent1_10, android.R.color.system_accent1_50,
+            android.R.color.system_accent1_100, android.R.color.system_accent1_200,
+            android.R.color.system_accent1_300, android.R.color.system_accent1_400,
+            android.R.color.system_accent1_500, android.R.color.system_accent1_600,
+            android.R.color.system_accent1_700, android.R.color.system_accent1_800,
+    };
+    static final int[] TONE_NAMES = {10, 50, 100, 200, 300, 400, 500, 600, 700, 800};
+
+    private Palette(Context c, int tone) {
         night = (c.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
                 == Configuration.UI_MODE_NIGHT_YES;
         // Clock: two close light tones, like the Pixel lock screen clock.
         clockLight = color(c, android.R.color.system_accent1_100, 0xFFC8FFF4);
         clockDark = color(c, android.R.color.system_accent1_200, 0xFF9DE0D0);
         date = color(c, android.R.color.system_accent1_50, Color.WHITE);
-        // Shortcut buttons: same tonal block style as the fingerprint button.
-        shortcutBg = color(c, android.R.color.system_accent1_100, 0xFFD8E2FF);
-        shortcutIcon = color(c, android.R.color.system_accent1_900, 0xFF001A41);
-        shortcutBgActive = color(c, android.R.color.system_accent1_600, 0xFF3D5F90);
-        shortcutIconActive = color(c, android.R.color.system_accent1_0, Color.WHITE);
+        // Shortcut buttons: a pale tonal block by default, like the fingerprint button. The icon picks dark or
+        // light from the block's own brightness so it always stands out.
+        int t = Math.max(0, Math.min(TONES.length - 1, tone));
+        int iconDark = color(c, android.R.color.system_accent1_900, 0xFF001A41);
+        int iconLight = color(c, android.R.color.system_accent1_10, Color.WHITE);
+        shortcutBg = color(c, TONES[t], 0xFFECF0FF);
+        shortcutIcon = Color.luminance(shortcutBg) > 0.4f ? iconDark : iconLight;
+        // Switched on (e.g. flashlight lit): the opposite end of the scale.
+        shortcutBgActive = color(c, t <= 4 ? android.R.color.system_accent1_600 : android.R.color.system_accent1_100,
+                0xFF3D5F90);
+        shortcutIconActive = Color.luminance(shortcutBgActive) > 0.4f ? iconDark : iconLight;
         signature = clockLight * 31 + shortcutBg * 17 + (night ? 1 : 0);
+    }
+
+    /** Color shown while a button is held down: a step toward the switched-on tone. */
+    int shortcutPressed(boolean active) {
+        int from = active ? shortcutBgActive : shortcutBg;
+        int to = active ? shortcutBg : shortcutBgActive;
+        float f = 0.3f;
+        return Color.argb(255,
+                Math.round(Color.red(from) + (Color.red(to) - Color.red(from)) * f),
+                Math.round(Color.green(from) + (Color.green(to) - Color.green(from)) * f),
+                Math.round(Color.blue(from) + (Color.blue(to) - Color.blue(from)) * f));
     }
 
     private static int color(Context c, int id, int fallback) {
@@ -39,9 +66,10 @@ final class Palette {
 
     private static Palette cached;
     private static int cachedVersion = -1;
+    private static int cachedTone = -1;
 
     /** Cached palette; rebuilt whenever the configuration (theme overlay, night mode) changes. */
-    static synchronized Palette of(Context context) {
+    static synchronized Palette of(Context context, int tone) {
         if (!listening) {
             listening = true;
             try {
@@ -53,9 +81,10 @@ final class Palette {
                 listening = false;
             }
         }
-        if (cached == null || cachedVersion != version || !listening) {
-            cached = new Palette(context);
+        if (cached == null || cachedVersion != version || cachedTone != tone || !listening) {
+            cached = new Palette(context, tone);
             cachedVersion = version;
+            cachedTone = tone;
         }
         return cached;
     }

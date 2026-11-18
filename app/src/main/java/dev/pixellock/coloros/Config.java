@@ -13,19 +13,34 @@ public final class Config {
     public static final String CLOCK_RESERVE = "clock_reserve";
     public static final String CLOCK_DATE = "clock_date";
     public static final String SHORTCUTS = "shortcut_enabled";
+    public static final String SHORTCUT_TONE = "shortcut_tone";
+    public static final String CLOCK_AVOID = "clock_avoid";
+    public static final String AOD = "aod_enabled";
+    public static final String CLOCK_OVERLAP = "clock_overlap";
+    public static final String CLOCK_GAP = "clock_gap";
     public static final String DUMP = "dump_views";
 
     public static final int SCALE_MIN = 50, SCALE_MAX = 150, SCALE_DEFAULT = 100;
     public static final int OFFSET_MIN = -200, OFFSET_MAX = 200, OFFSET_DEFAULT = 0;
-    public static final int ROUND_MIN = 0, ROUND_MAX = 100, ROUND_DEFAULT = 30;
+    public static final int ROUND_MIN = 0, ROUND_MAX = 100, ROUND_DEFAULT = 0;
+    /** Index into Palette.TONES (accent1 10, 50, 100 ... 800). 1 = tone 50, the pale fingerprint-button look. */
+    /** Digit overlap in % of the text size, cut-out ring in 0.1 % of the text size. */
+    public static final int OVERLAP_MIN = 0, OVERLAP_MAX = 30, OVERLAP_DEFAULT = 12;
+    public static final int GAP_MIN = 0, GAP_MAX = 60, GAP_DEFAULT = 25;
+    public static final int TONE_MIN = 0, TONE_MAX = 9, TONE_DEFAULT = 1;
 
     public final boolean clock;
     public final int clockScale;
     public final int clockOffsetDp;
     public final int clockRound;
     public final boolean clockReserve;
+    public final int clockOverlap;
+    public final int clockGap;
     public final boolean clockDate;
     public final boolean shortcuts;
+    public final int shortcutTone;
+    public final boolean clockAvoid;
+    public final boolean aod;
     public final boolean dump;
 
     private Config(Map<String, ?> m) {
@@ -34,8 +49,13 @@ public final class Config {
         clockOffsetDp = clamp(integer(m, CLOCK_OFFSET, OFFSET_DEFAULT), OFFSET_MIN, OFFSET_MAX);
         clockRound = clamp(integer(m, CLOCK_ROUND, ROUND_DEFAULT), ROUND_MIN, ROUND_MAX);
         clockReserve = bool(m, CLOCK_RESERVE, true);
+        clockOverlap = clamp(integer(m, CLOCK_OVERLAP, OVERLAP_DEFAULT), OVERLAP_MIN, OVERLAP_MAX);
+        clockGap = clamp(integer(m, CLOCK_GAP, GAP_DEFAULT), GAP_MIN, GAP_MAX);
         clockDate = bool(m, CLOCK_DATE, true);
         shortcuts = bool(m, SHORTCUTS, true);
+        shortcutTone = clamp(integer(m, SHORTCUT_TONE, TONE_DEFAULT), TONE_MIN, TONE_MAX);
+        clockAvoid = bool(m, CLOCK_AVOID, true);
+        aod = bool(m, AOD, true);
         dump = bool(m, DUMP, false);
     }
 
@@ -59,7 +79,8 @@ public final class Config {
 
     @Override public String toString() {
         return "clock=" + clock + " scale=" + clockScale + " offsetDp=" + clockOffsetDp + " round=" + clockRound
+                + " overlap=" + clockOverlap + " gap=" + clockGap
                 + " reserve=" + clockReserve + " date=" + clockDate + " shortcuts=" + shortcuts
-                + " dump=" + dump;
+                + " tone=" + shortcutTone + " avoid=" + clockAvoid + " aod=" + aod + " dump=" + dump;
     }
 }

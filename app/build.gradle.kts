@@ -20,8 +20,9 @@ android {
         applicationId = "dev.pixellock.coloros"
         minSdk = 34
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI sets these per run (see .github/workflows/build.yml) so every build has its own number.
+        versionCode = System.getenv("PIXELLOCK_VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("PIXELLOCK_VERSION_NAME") ?: "0.2.0-local"
     }
 
     compileOptions {

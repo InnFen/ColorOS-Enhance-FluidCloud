@@ -2,14 +2,16 @@
 
 把 ColorOS 鎖屏改成 Pixel 的樣子：
 
-- **雙行大時鐘**：小時在上、分鐘在下，粗圓字型（Google Sans Flex），兩種深淺交錯，顏色跟隨系統取色（Monet）。日期移到時鐘下方（可關）。
-- **快捷按鈕取色色塊**：左下、右下角按鈕（手電筒、相機）換成跟隨系統色的實心圓，圖示改成深色；按下時會變成圓角方塊。
+- **雙行大時鐘**：小時在上、分鐘在下，粗體字型（Google Sans Flex），數字像 Pixel 一樣緊密重疊，重疊處留一圈鏤空間隙，兩種深淺交錯，顏色跟隨系統取色（Monet）。日期移到時鐘下方（可關）。
+- **自動讓位**：鎖屏有通知或流體雲卡片時，時鐘縮小或改成一行；連一行都放不下就暫時換回原本的時鐘。
+- **息屏顯示**：息屏時也顯示 Pixel 時鐘（較細的字重）。
+- **快捷按鈕取色色塊**：左下、右下角按鈕（手電筒、相機）換成跟隨系統色的淺色實心圓（深淺可調），圖示依底色自動變深或變淺；按下時會變成圓角方塊。不碰控制中心或其他磁貼。
 - 不碰指紋圖示，也**不碰解鎖密碼盤**（可以和 ColorOS-SplashScreen-Evolution 的 M3E 密碼盤一起用）。
 
 ## 需求
 
 - Root + LSPosed（支援 libxposed API 102，和 COS遮罩進化、流體雲增強同一種）
-- 作用域只勾 **系統介面（com.android.systemui）**
+- 作用域勾 **系統介面（com.android.systemui）**，要息屏時鐘再勾 **息屏顯示（com.oplus.aod）**
 - 針對 Android 14 以上的 ColorOS 設計，**尚未在實機上測試**
 
 ## 編譯
@@ -20,7 +22,7 @@
 2. 打開 repo 的 **Actions** → **Build APK** → **Run workflow**（推送到 pixel-lockscreen 分支也會自動跑）。
 3. 跑完後在該次執行的 **Artifacts** 下載 `pixel-lockscreen-apk`，解壓得到 APK。
 
-每次執行預設會產生新的簽名金鑰，所以更新時要先解除安裝舊版。想直接覆蓋安裝，就自己產一個 PKCS12 金鑰，在 repo 的 Settings → Secrets 加上 `DEBUG_KEYSTORE_B64`（金鑰檔 base64）和 `DEBUG_KEYSTORE_PASSWORD`，別名用 `pixellock`。
+每次編譯的版本號是 `0.2.<執行編號>-<commit>`，APK 檔名和 Artifact 名稱都帶版本號，模組設定頁頂端也會顯示。簽名金鑰會快取在 Actions 裡，之後的版本可以直接覆蓋安裝（快取 7 天沒用會被清掉，那時要先解除安裝一次）。想直接覆蓋安裝，就自己產一個 PKCS12 金鑰，在 repo 的 Settings → Secrets 加上 `DEBUG_KEYSTORE_B64`（金鑰檔 base64）和 `DEBUG_KEYSTORE_PASSWORD`，別名用 `pixellock`。
 
 本機編譯：Android SDK platform 37 + build-tools 37.0.0、JDK 21，執行 `./gradlew :app:assembleDebug`。
 

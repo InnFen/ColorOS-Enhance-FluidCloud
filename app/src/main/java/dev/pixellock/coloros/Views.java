@@ -115,6 +115,22 @@ final class Views {
         return out;
     }
 
+    /** True when v is on screen with some opacity and belongs to the calling thread's UI (safe to measure). */
+    static boolean shownOnThisThread(View v) {
+        if (v == null || !v.isAttachedToWindow()) return false;
+        android.os.Handler h = v.getHandler();
+        if (h == null || h.getLooper() != android.os.Looper.myLooper()) return false;
+        if (!v.isShown()) return false;
+        float alpha = 1f;
+        View cur = v;
+        while (cur != null) {
+            alpha *= cur.getAlpha() * cur.getTransitionAlpha();
+            ViewParent p = cur.getParent();
+            cur = p instanceof View ? (View) p : null;
+        }
+        return alpha > 0.2f;
+    }
+
     static String describe(View v) {
         Rect r = screen(v);
         return v.getClass().getName() + " id=" + id(v) + " " + r.toShortString()

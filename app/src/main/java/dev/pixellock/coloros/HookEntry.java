@@ -13,7 +13,7 @@ import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 
 /**
- * libxposed (API 102) entry. Runs only inside com.android.systemui.
+ * libxposed (API 102) entry. Runs inside com.android.systemui and the ColorOS always-on display app.
  *
  * Instead of hooking ColorOS-private keyguard classes (whose names change between builds and which we cannot
  * inspect from here), it watches every window SystemUI adds and restyles the lock screen views it recognises
@@ -22,8 +22,12 @@ import io.github.libxposed.api.XposedModule;
 public final class HookEntry extends XposedModule {
     static final String TAG = "PixelLockscreen";
     private static final String SYSTEM_UI = "com.android.systemui";
+    /** ColorOS always-on display apps (the name differs between ColorOS / OxygenOS generations). */
+    private static final java.util.Set<String> AOD_APPS = java.util.Set.of("com.oplus.aod", "com.coloros.aod");
 
     private boolean systemUi;
+    private boolean aodApp;
+    private String process = "";
     private boolean installed;
     volatile Config config = Config.from(Map.of());
     private SharedPreferences preferences;
@@ -32,17 +36,25 @@ public final class HookEntry extends XposedModule {
             java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
 
     @Override public void onModuleLoaded(ModuleLoadedParam param) {
-        systemUi = !param.isSystemServer() && SYSTEM_UI.equals(param.getProcessName());
+        if (param.isSystemServer()) return;
+        process = String.valueOf(param.getProcessName());
+        systemUi = SYSTEM_UI.equals(process);
+        aodApp = AOD_APPS.contains(process);
     }
 
+    /** True inside the always-on display app, where only the clock is restyled. */
+    boolean inAodApp() { return aodApp; }
+
     @Override public void onPackageReady(PackageReadyParam param) {
-        if (!systemUi || installed || !param.isFirstPackage() || !SYSTEM_UI.equals(param.getPackageName())) return;
+        if (installed || !param.isFirstPackage()) return;
+        if (!(systemUi && SYSTEM_UI.equals(param.getPackageName()))
+                && !(aodApp && process.equals(param.getPackageName()))) return;
         installed = true;
         observePreferences();
         try {
             installWindowHook();
         } catch (Throwable t) {
-            error("Could not watch SystemUI windows; module inactive", t);
+            error("Could not watch windows in " + process + "; module inactive", t);
         }
     }
 
@@ -66,7 +78,7 @@ public final class HookEntry extends XposedModule {
             hooked++;
         }
         if (hooked == 0) throw new NoSuchMethodException("WindowManagerGlobal.addView");
-        info("Watching SystemUI windows (" + hooked + " addView overloads), config: " + config);
+        info("Watching " + process + " windows (" + hooked + " addView overloads), config: " + config);
     }
 
     private void windowAdded(View view, ViewGroup.LayoutParams params) {
@@ -101,6 +113,31 @@ public final class HookEntry extends XposedModule {
         synchronized (scanners) { copy = scanners.toArray(new WindowScanner[0]); }
         for (WindowScanner s : copy) s.configChanged();
         info("Config: " + config);
+    }
+
+    // Cards in other windows (e.g. a live "fluid cloud" card) that the lock screen clock must stay above.
+    private final java.util.Map<WindowScanner, java.util.List<View>> floating = new java.util.WeakHashMap<>();
+    private volatile boolean anyFloating;
+
+    void setFloatingCards(WindowScanner owner, java.util.List<View> cards) {
+        boolean changed;
+        synchronized (floating) {
+            java.util.List<View> old = cards.isEmpty() ? floating.remove(owner) : floating.put(owner, cards);
+            changed = !(old == null ? cards.isEmpty() : old.equals(cards));
+            anyFloating = !floating.isEmpty();
+        }
+        if (!changed) return;
+        WindowScanner[] copy;
+        synchronized (scanners) { copy = scanners.toArray(new WindowScanner[0]); }
+        for (WindowScanner s : copy) if (s != owner) s.floatingCardsChanged();
+    }
+
+    boolean hasFloatingCards() { return anyFloating; }
+
+    java.util.List<View> floatingCards() {
+        java.util.List<View> out = new java.util.ArrayList<>();
+        synchronized (floating) { for (java.util.List<View> l : floating.values()) out.addAll(l); }
+        return out;
     }
 
     void info(String message) { log(Log.INFO, TAG, message); }

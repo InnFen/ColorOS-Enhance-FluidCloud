@@ -39,9 +39,26 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
 
+      # Version: 0.2.<run number>, plus the short commit, e.g. 0.2.5-1a2b3c4.
+      - name: Version
+        run: |
+          echo "PIXELLOCK_VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "PIXELLOCK_VERSION_NAME=0.2.${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      # Keep the generated signing key between runs so new builds install over old ones.
+      - name: Restore signing key
+        uses: actions/cache@v4
+        with:
+          path: .local
+          key: pixellock-signing-v1
+
       - name: Signing key
         run: |
           mkdir -p .local
+          if [ -f .local/debug.p12 ] && [ -f .local/debug.properties ] && [ -z "${{ secrets.DEBUG_KEYSTORE_B64 }}" ]; then
+            echo "Using cached signing key"
+            exit 0
+          fi
           if [ -n "${{ secrets.DEBUG_KEYSTORE_B64 }}" ]; then
             echo "${{ secrets.DEBUG_KEYSTORE_B64 }}" | base64 -d > .local/debug.p12
             PASS="${{ secrets.DEBUG_KEYSTORE_PASSWORD }}"
@@ -57,8 +74,10 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-configuration-cache :app:assembleDebug
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/*.apk "dist/PixelLockscreen-v${PIXELLOCK_VERSION_NAME}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pixel-lockscreen-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: pixel-lockscreen-v${{ env.PIXELLOCK_VERSION_NAME }}
+          path: dist/*.apk

@@ -22,10 +22,11 @@ final class Fonts {
 
     private Fonts() { }
 
-    /** Chunky clock digits. round = 0..100 (ROND axis). */
-    static Typeface clock(HookEntry m, Context c, int round) {
-        return get(m, c, "'wght' 1000, 'wdth' 110, 'opsz' 144, 'ROND' " + round,
-                Typeface.create(Typeface.SANS_SERIF, 900, false));
+    /** Chunky clock digits. round = 0..100 (ROND axis). The always-on display gets a lighter cut. */
+    static Typeface clock(HookEntry m, Context c, int round, boolean aod) {
+        int weight = aod ? 450 : 900;
+        return get(m, c, "'wght' " + weight + ", 'wdth' 100, 'opsz' 144, 'ROND' " + round,
+                Typeface.create(Typeface.SANS_SERIF, weight, false));
     }
 
     static Typeface date(HookEntry m, Context c) {
