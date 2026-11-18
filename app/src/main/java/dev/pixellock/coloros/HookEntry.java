@@ -123,6 +123,7 @@ public final class HookEntry extends XposedModule {
             if (st == null) return chain.proceed();
             try {
                 View v = (View) chain.getThisObject();
+                if (InPlaceClock.stockNow(st, v)) return chain.proceed();
                 android.graphics.Canvas canvas = (android.graphics.Canvas) chain.getArg(0);
                 if (kind == 0) InPlaceClock.drawWhole(st, v, canvas);
                 else if (kind == 1) InPlaceClock.drawFromOnDraw(st, v, canvas);
@@ -168,10 +169,34 @@ public final class HookEntry extends XposedModule {
         if (!(view instanceof ViewGroup)) return;
         String title = params instanceof WindowManager.LayoutParams
                 ? String.valueOf(((WindowManager.LayoutParams) params).getTitle()) : "";
+        registerScreenReceiver(view.getContext());
         WindowScanner scanner = new WindowScanner(this, (ViewGroup) view, title);
         synchronized (scanners) { scanners.add(scanner); }
         scanner.start();
         info("Window added: title=" + title + " root=" + view.getClass().getName());
+    }
+
+    private boolean screenReceiver;
+
+    /** Screen on / off in SystemUI: hand the clock back to ColorOS while the system AOD runs, take it again after. */
+    private void registerScreenReceiver(android.content.Context context) {
+        if (screenReceiver || !systemUi) return;
+        screenReceiver = true;
+        try {
+            android.content.IntentFilter f = new android.content.IntentFilter();
+            f.addAction(android.content.Intent.ACTION_SCREEN_ON);
+            f.addAction(android.content.Intent.ACTION_SCREEN_OFF);
+            context.getApplicationContext().registerReceiver(new android.content.BroadcastReceiver() {
+                @Override public void onReceive(android.content.Context c, android.content.Intent i) {
+                    boolean on = android.content.Intent.ACTION_SCREEN_ON.equals(i.getAction());
+                    WindowScanner[] copy;
+                    synchronized (scanners) { copy = scanners.toArray(new WindowScanner[0]); }
+                    for (WindowScanner s : copy) s.screenChanged(on);
+                }
+            }, f, android.content.Context.RECEIVER_NOT_EXPORTED);
+        } catch (Throwable t) {
+            error("Screen on/off receiver failed", t);
+        }
     }
 
     private void observePreferences() {

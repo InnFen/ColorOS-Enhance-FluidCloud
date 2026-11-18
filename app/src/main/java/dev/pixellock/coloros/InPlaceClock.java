@@ -74,6 +74,23 @@ final class InPlaceClock {
 
     static boolean isBound(View v) { return states.containsKey(v); }
 
+    /**
+     * In SystemUI while the screen is off, ColorOS's own clock draws as usual: the always-on display is the
+     * system's (its clock is restyled inside the AOD app), we never draw a second AOD of our own.
+     */
+    static boolean stockNow(State s, View v) {
+        return !s.aodProcess && !interactive(v.getContext());
+    }
+
+    /** Screen went off in SystemUI: give ColorOS its date back while its own clock shows. */
+    static void dozing(View v) {
+        State s = states.get(v);
+        if (s == null) return;
+        if (s.date != null) s.date.setTransitionAlpha(1f);
+        v.requestLayout();
+        v.invalidate();
+    }
+
     /** How many times ColorOS asked the bound view to draw since it was bound, and for how long it's been bound. */
     static int draws(View v) { State s = states.get(v); return s == null ? -1 : s.draws; }
 
@@ -105,7 +122,9 @@ final class InPlaceClock {
         float textSize = screenMin * 0.40f * cfg.clockScale / 100f;
         float dateSize = date != null && date.getTextSize() > 0
                 ? date.getTextSize() : Views.dp(v, 17) * c.getResources().getConfiguration().fontScale;
-        boolean withDate = cfg.clockDate && !compact;
+        // The system AOD keeps its own layout: a wide clock box gets the one-line clock and ColorOS's own date.
+        boolean lineBox = !measure && v.getHeight() > 0 && v.getHeight() < v.getWidth() * 0.6f;
+        boolean withDate = cfg.clockDate && !compact && !lineBox;
         boolean changed = s.normal.style(Fonts.clock(m, c, cfg.clockRound, false), textSize, Fonts.date(m, c),
                 dateSize, palette, withDate, cfg.clockOverlap / 100f, cfg.clockGap / 1000f);
         changed |= s.aod.style(Fonts.clock(m, c, cfg.clockRound, true), textSize, Fonts.date(m, c),
@@ -141,7 +160,7 @@ final class InPlaceClock {
         }
         // The big clock carries its own date underneath; in the notification layout ColorOS's date stays.
         if (date != null) {
-            float a = (!compact && cfg.clockDate) ? 0f : 1f;
+            float a = withDate ? 0f : 1f;
             if (date.getTransitionAlpha() != a) date.setTransitionAlpha(a);
         }
         if (fresh || changed) {
@@ -187,7 +206,7 @@ final class InPlaceClock {
 
     private static void draw(State s, View v, Canvas canvas, String via) {
         s.draws++;
-        boolean aodStyle = s.aodProcess || !interactive(v.getContext());
+        boolean aodStyle = s.aodProcess;
         ClockRenderer r = aodStyle ? s.aod : s.normal;
         String[] hm = time(v);
         s.normal.setTime(hm[0], hm[1]);
@@ -210,19 +229,22 @@ final class InPlaceClock {
         int save = canvas.save();
         canvas.translate(v.getScrollX() + left, v.getScrollY() + top);
         float maxLine = v instanceof TextView ? ((TextView) v).getTextSize() * 1.15f : h;
+        // Where ColorOS's box keeps its own size (the system AOD), a wide box gets the one-line clock.
+        boolean compact = s.compact || (!s.measure && h < w * 0.6f);
+        boolean wasCompact = s.wasCompact || (!s.measure && h < w * 0.6f);
         // Short cross-fade when switching between the two-row and one-row clock.
         long since = SystemClock.uptimeMillis() - s.switchedAt;
-        if (since < FADE_MS && s.wasCompact != s.compact) {
+        if (since < FADE_MS && wasCompact != compact) {
             float t = since / (float) FADE_MS;
             int a = canvas.saveLayerAlpha(0, 0, w, h, Math.round(255 * (1 - t)));
-            drawMode(r, canvas, w, h, s.wasCompact, maxLine);
+            drawMode(r, canvas, w, h, wasCompact, maxLine);
             canvas.restoreToCount(a);
             a = canvas.saveLayerAlpha(0, 0, w, h, Math.round(255 * t));
-            drawMode(r, canvas, w, h, s.compact, maxLine);
+            drawMode(r, canvas, w, h, compact, maxLine);
             canvas.restoreToCount(a);
             v.postInvalidateOnAnimation();
         } else {
-            drawMode(r, canvas, w, h, s.compact, maxLine);
+            drawMode(r, canvas, w, h, compact, maxLine);
         }
         canvas.restoreToCount(save);
     }
@@ -252,7 +274,7 @@ final class InPlaceClock {
 
     /** After View.measure of a bound clock: ask for room for the two rows (and date). */
     static void measure(State s, View v, int widthSpec, int heightSpec) {
-        if (s.compact || !s.measure) return;
+        if (s.compact || !s.measure || stockNow(s, v)) return;
         String[] hm = time(v);
         s.normal.setTime(hm[0], hm[1]);
         int padW = v.getPaddingLeft() + v.getPaddingRight();

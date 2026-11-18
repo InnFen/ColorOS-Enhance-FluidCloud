@@ -128,6 +128,27 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         return false;
     }
 
+    /** Screen turned on or off (SystemUI only). Called on the main thread. */
+    void screenChanged(boolean on) {
+        handler.post(() -> {
+            if (!on) {
+                // The always-on display is the system's: no overlay of ours, ColorOS's clock and date as they are.
+                if (clock != null) { clock.release(); clock = null; }
+                if (inPlace != null) InPlaceClock.dozing(inPlace);
+            }
+            schedule();
+        });
+    }
+
+    private boolean interactive() {
+        try {
+            android.os.PowerManager pm = root.getContext().getSystemService(android.os.PowerManager.class);
+            return pm == null || pm.isInteractive();
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
     /** Settings changed: undo disabled features right away, then rescan. Called from any thread. */
     void configChanged() {
         handler.post(() -> {
@@ -180,7 +201,10 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         View clockView = findClock(tree, screenW, screenH, keypads);
         boolean keyguardWindow = clockView != null || aod || KEYGUARD_TITLE.matcher(title).matches();
 
-        if (cfg.clock && clockView != null) {
+        // Screen off in SystemUI: the system AOD (or ColorOS's dozing keyguard) keeps its own clock untouched.
+        boolean dozing = !m.inAodApp() && !interactive();
+        if (dozing && clock != null) { clock.release(); clock = null; }
+        if (cfg.clock && clockView != null && !dozing) {
             TextView date = findDate(tree, clockView);
             boolean compact = cfg.clockAvoid && (!findObstacles(tree, clockView, date, screenW, screenH).isEmpty()
                     || anyShown(m.floatingCards()));
@@ -202,6 +226,9 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
                 inPlace = clockView;
                 // In the always-on display ColorOS's layout is left as it is (no resizing), so nothing jumps.
                 InPlaceClock.bind(m, inPlace, date, cfg, palette, compact, !aod);
+            } else if (aod) {
+                // No clock of our own on the always-on display: if its clock can't be restyled in place, leave it.
+                if (inPlace != null) { InPlaceClock.release(inPlace); inPlace = null; }
             } else {
                 if (inPlace != null) { InPlaceClock.release(inPlace); inPlace = null; }
                 if (clock == null) clock = new ClockController(m, root, aod);
