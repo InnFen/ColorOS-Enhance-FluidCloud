@@ -1,0 +1,47 @@
+# Builds the fluid-cloud-only debug APK on GitHub's servers.
+# Usage: push this source to your own GitHub repository, open Actions,
+# pick "Build fluid cloud APK" and press "Run workflow". The APK is in the run's Artifacts.
+name: Build fluid cloud APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 37 and Build Tools 37.0.0
+        run: sdkmanager "platforms;android-37" "build-tools;37.0.0"
+
+      - name: Create a debug signing key
+        run: |
+          mkdir -p .local
+          if [ -n "${{ secrets.DEBUG_KEYSTORE_B64 }}" ]; then
+            echo "${{ secrets.DEBUG_KEYSTORE_B64 }}" | base64 -d > .local/debug.p12
+            PASS="${{ secrets.DEBUG_KEYSTORE_PASSWORD }}"
+          else
+            PASS=$(openssl rand -base64 24 | tr -d '/+=')
+            keytool -genkeypair -storetype PKCS12 -keystore .local/debug.p12 \
+              -alias coloros-enhance-debug -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" -dname "CN=Fluid Cloud Debug"
+          fi
+          printf 'storePassword=%s\nkeyAlias=coloros-enhance-debug\nkeyPassword=%s\n' "$PASS" "$PASS" > .local/debug.properties
+
+      - name: Build debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-configuration-cache :app:assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fluidcloud-debug-apk
+          path: app/build/outputs/apk/debug/*.apk

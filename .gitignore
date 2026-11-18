@@ -1,0 +1,38 @@
+.gradle/
+.kotlin/
+**/build/
+local.properties
+.cxx/
+.externalNativeBuild/
+captures/
+.signing/
+.local/
+.superpowers/
+*.jks
+*.keystore
+*.p12
+*.apk
+*.aab
+
+# Local IDE state, diagnostics and credentials must never be published.
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+*.log
+*.hprof
+.env
+.env.*
+!.env.example
+*.pfx
+*.pem
+*.key
+*.jfr
+
+# Historical device captures and validation notes remain local.
+# Keep an explicit allowlist for reviewed public documentation.
+/docs/*
+!/docs/PUBLISHING.md
+!/docs/PRIVACY.md
+!/docs/MIGRATION.md
+/design/

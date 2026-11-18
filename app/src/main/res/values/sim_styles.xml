@@ -1,0 +1,42 @@
+<resources>
+    <style name="sim_AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorBackground">?attr/colorSurface</item>
+        <item name="android:windowLightStatusBar">@bool/sim_light_system_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/sim_light_system_bars</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
+    <style name="sim_Widget_SimPin_SlotCard" parent="Widget.Material3.CardView.Filled">
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
+        <item name="cardCornerRadius">24dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="contentPadding">20dp</item>
+    </style>
+
+    <style name="sim_TextAppearance_SimPin_Title" parent="TextAppearance.Material3.HeadlineLarge">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <style name="sim_TextAppearance_SimPin_Section" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <style name="sim_TextAppearance_SimPin_Body" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <style name="sim_TextAppearance_SimPin_Error" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textColor">?attr/colorError</item>
+    </style>
+
+    <style name="sim_Widget_SimPin_PinInput" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxCornerRadiusTopStart">12dp</item>
+        <item name="boxCornerRadiusTopEnd">12dp</item>
+        <item name="boxCornerRadiusBottomStart">12dp</item>
+        <item name="boxCornerRadiusBottomEnd">12dp</item>
+    </style>
+</resources>

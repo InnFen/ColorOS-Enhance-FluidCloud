@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">流体云增强</string>
+    <string name="module_description">ColorOS 16 / 17 流体云增强（基于 Howard 的 ColorOS 增强精简，仅保留流体云功能，摄像头避让空间可调）。</string>
+</resources>

@@ -1,0 +1,29 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <permission android:name="${applicationId}.sim.permission.CONFIGURE" android:protectionLevel="signature" />
+    <uses-permission android:name="${applicationId}.sim.permission.CONFIGURE" />
+    <queries>
+        <package android:name="dev.howard.colorosenhance" />
+        <package android:name="${publicApplicationId}" />
+        <package android:name="com.android.settings" />
+        <package android:name="com.android.systemui" />
+        <intent><action android:name="android.intent.action.VIEW" /><data android:mimeType="application/vnd.android.package-archive" /></intent>
+        <intent><action android:name="android.intent.action.INSTALL_PACKAGE" /><data android:mimeType="application/vnd.android.package-archive" /></intent>
+    </queries>
+    <application android:name=".EnhanceApplication" android:label="${moduleLabel}" android:description="@string/module_description"
+        android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/Theme.ColorOSEnhance" android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true" android:usesCleartextTraffic="false"
+        android:enableOnBackInvokedCallback="true">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.INFO" /></intent-filter>
+        </activity>
+        <activity android:name=".migration.MigrationActivity" android:exported="false" />
+        <activity android:name=".updates.UpdateActivity" android:exported="true" />
+        <activity-alias android:name=".Launcher" android:targetActivity=".MainActivity" android:enabled="true" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
+        <activity android:name="com.howard.simpinautounlock.MainActivity" android:exported="false" android:theme="@style/sim_AppTheme" android:windowSoftInputMode="adjustResize" />
+        <service android:name=".bridge.SettingsBridgeService" android:exported="true" android:permission="android.permission.WRITE_SECURE_SETTINGS" />
+        <provider android:name="io.github.libxposed.service.XposedProvider" android:authorities="${applicationId}.XposedService" android:exported="true"
+            android:permission="${applicationId}.sim.permission.CONFIGURE" tools:node="merge" />
+    </application>
+</manifest>

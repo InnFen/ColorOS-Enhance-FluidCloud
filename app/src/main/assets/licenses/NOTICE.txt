@@ -1,0 +1,141 @@
+ColorOS Enhance
+Copyright (c) 2026 Howard
+Original module code: MIT License (project-mit.txt).
+
+Third-party libraries retain their own licenses and copyright notices.
+
+MIUIX 0.9.4 — compose-miuix-ui contributors
+https://github.com/compose-miuix-ui/miuix
+Backdrop 2.0.1 / Shapes 1.2.1 — Kyant / Kyant0 and contributors
+https://github.com/Kyant0/AndroidLiquidGlass
+https://github.com/Kyant0/Shapes
+libxposed service/interface 102.0.0 — libxposed contributors
+https://github.com/libxposed/service
+AndroidX / Jetpack Compose — The Android Open Source Project
+https://android.googlesource.com/platform/frameworks/support/
+Material Components / Error Prone / Guava / JSpecify — respective Google and project contributors
+https://github.com/material-components/material-components-android
+https://github.com/google/error-prone
+https://github.com/google/guava
+https://github.com/jspecify/jspecify
+Kotlin / kotlinx.coroutines / JetBrains annotations — JetBrains and contributors
+https://github.com/JetBrains/kotlin
+https://github.com/Kotlin/kotlinx.coroutines
+https://github.com/JetBrains/java-annotations
+The above libraries use Apache License 2.0 (ui-apache-2.0.txt).
+
+MaterialKolor material-color-utilities-android 5.0.1 — Copyright (c) 2025 Jordon de Hoog
+https://github.com/jordond/MaterialKolor
+MIT License (materialkolor-mit.txt). Material Color Utilities includes work of The Android Open Source Project under Apache License 2.0.
+
+Runtime component versions:
+androidx.activity:activity-compose:1.13.0 — Apache-2.0
+androidx.activity:activity-ktx:1.13.0 — Apache-2.0
+androidx.activity:activity:1.13.0 — Apache-2.0
+androidx.annotation:annotation-experimental:1.4.1 — Apache-2.0
+androidx.annotation:annotation-jvm:1.9.1 — Apache-2.0
+androidx.appcompat:appcompat-resources:1.7.0 — Apache-2.0
+androidx.appcompat:appcompat:1.7.0 — Apache-2.0
+androidx.arch.core:core-common:2.2.0 — Apache-2.0
+androidx.arch.core:core-runtime:2.2.0 — Apache-2.0
+androidx.autofill:autofill:1.0.0 — Apache-2.0
+androidx.cardview:cardview:1.0.0 — Apache-2.0
+androidx.collection:collection-jvm:1.5.0 — Apache-2.0
+androidx.collection:collection-ktx:1.5.0 — Apache-2.0
+androidx.compose.animation:animation-android:1.12.0 — Apache-2.0
+androidx.compose.animation:animation-core-android:1.12.0 — Apache-2.0
+androidx.compose.foundation:foundation-android:1.12.0 — Apache-2.0
+androidx.compose.foundation:foundation-layout-android:1.12.0 — Apache-2.0
+androidx.compose.material3:material3-window-size-class-android:1.5.0-alpha22 — Apache-2.0
+androidx.compose.runtime:runtime-android:1.12.0 — Apache-2.0
+androidx.compose.runtime:runtime-annotation-android:1.12.0 — Apache-2.0
+androidx.compose.runtime:runtime-retain-android:1.12.0 — Apache-2.0
+androidx.compose.runtime:runtime-saveable-android:1.12.0 — Apache-2.0
+androidx.compose.ui:ui-android:1.12.0 — Apache-2.0
+androidx.compose.ui:ui-geometry-android:1.12.0 — Apache-2.0
+androidx.compose.ui:ui-graphics-android:1.12.0 — Apache-2.0
+androidx.compose.ui:ui-text-android:1.12.0 — Apache-2.0
+androidx.compose.ui:ui-unit-android:1.12.0 — Apache-2.0
+androidx.compose.ui:ui-util-android:1.12.0 — Apache-2.0
+androidx.concurrent:concurrent-futures:1.1.0 — Apache-2.0
+androidx.constraintlayout:constraintlayout-core:1.0.0 — Apache-2.0
+androidx.constraintlayout:constraintlayout:2.1.0 — Apache-2.0
+androidx.coordinatorlayout:coordinatorlayout:1.1.0 — Apache-2.0
+androidx.core:core-ktx:1.18.0 — Apache-2.0
+androidx.core:core-viewtree:1.0.0 — Apache-2.0
+androidx.core:core:1.18.0 — Apache-2.0
+androidx.cursoradapter:cursoradapter:1.0.0 — Apache-2.0
+androidx.customview:customview-poolingcontainer:1.0.0 — Apache-2.0
+androidx.customview:customview:1.1.0 — Apache-2.0
+androidx.drawerlayout:drawerlayout:1.1.1 — Apache-2.0
+androidx.dynamicanimation:dynamicanimation:1.1.0 — Apache-2.0
+androidx.emoji2:emoji2-views-helper:1.4.0 — Apache-2.0
+androidx.emoji2:emoji2:1.4.0 — Apache-2.0
+androidx.fragment:fragment:1.5.4 — Apache-2.0
+androidx.graphics:graphics-path:1.0.1 — Apache-2.0
+androidx.graphics:graphics-shapes-android:1.0.1 — Apache-2.0
+androidx.interpolator:interpolator:1.0.0 — Apache-2.0
+androidx.lifecycle:lifecycle-common-jvm:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-livedata-core-ktx:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-livedata-core:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-livedata:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-process:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-runtime-android:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-runtime-compose-android:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-runtime-ktx-android:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-viewmodel-android:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-viewmodel-savedstate-android:2.9.4 — Apache-2.0
+androidx.lifecycle:lifecycle-viewmodel:2.9.4 — Apache-2.0
+androidx.loader:loader:1.0.0 — Apache-2.0
+androidx.navigationevent:navigationevent-android:1.1.2 — Apache-2.0
+androidx.navigationevent:navigationevent-compose-android:1.1.2 — Apache-2.0
+androidx.profileinstaller:profileinstaller:1.4.0 — Apache-2.0
+androidx.recyclerview:recyclerview:1.2.1 — Apache-2.0
+androidx.resourceinspection:resourceinspection-annotation:1.0.1 — Apache-2.0
+androidx.savedstate:savedstate-android:1.4.0 — Apache-2.0
+androidx.savedstate:savedstate-compose-android:1.4.0 — Apache-2.0
+androidx.savedstate:savedstate-ktx:1.4.0 — Apache-2.0
+androidx.startup:startup-runtime:1.1.1 — Apache-2.0
+androidx.tracing:tracing:1.2.0 — Apache-2.0
+androidx.transition:transition:1.5.0 — Apache-2.0
+androidx.vectordrawable:vectordrawable-animated:1.1.0 — Apache-2.0
+androidx.vectordrawable:vectordrawable:1.1.0 — Apache-2.0
+androidx.versionedparcelable:versionedparcelable:1.1.1 — Apache-2.0
+androidx.viewpager:viewpager:1.0.0 — Apache-2.0
+androidx.viewpager2:viewpager2:1.0.0 — Apache-2.0
+androidx.window:window-core-android:1.5.0 — Apache-2.0
+androidx.window:window:1.5.0 — Apache-2.0
+com.google.android.material:material:1.13.0 — Apache-2.0
+com.google.errorprone:error_prone_annotations:2.15.0 — Apache-2.0
+com.google.guava:listenablefuture:1.0 — Apache-2.0
+com.materialkolor:material-color-utilities-android:5.0.1 — MIT
+dev.drewhamilton.poko:poko-annotations-jvm:0.23.1 — Apache-2.0
+io.github.kyant0:backdrop-android:2.0.1 — Apache-2.0
+io.github.kyant0:shapes-android:1.2.1 — Apache-2.0
+io.github.libxposed:interface:102.0.0 — Apache-2.0
+io.github.libxposed:service:102.0.0 — Apache-2.0
+org.jetbrains:annotations:26.1.0 — Apache-2.0
+org.jetbrains.compose.animation:animation-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.animation:animation-core-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.foundation:foundation-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.foundation:foundation-layout-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.material3:material3-window-size-class-android:1.12.0-alpha03 — Apache-2.0
+org.jetbrains.compose.runtime:runtime-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.runtime:runtime-saveable-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.ui:ui-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.ui:ui-geometry-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.ui:ui-graphics-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.ui:ui-text-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.ui:ui-unit-android:1.12.0 — Apache-2.0
+org.jetbrains.compose.ui:ui-util-android:1.12.0 — Apache-2.0
+org.jetbrains.kotlin:kotlin-stdlib:2.4.20 — Apache-2.0
+org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0 — Apache-2.0
+org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.9.0 — Apache-2.0
+org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.7.3 — Apache-2.0
+org.jspecify:jspecify:1.0.0 — Apache-2.0
+top.yukonga.miuix.kmp:miuix-core-android:0.9.4 — Apache-2.0
+top.yukonga.miuix.kmp:miuix-preference-android:0.9.4 — Apache-2.0
+top.yukonga.miuix.kmp:miuix-shader-android:0.9.4 — Apache-2.0
+top.yukonga.miuix.kmp:miuix-squircle-android:0.9.4 — Apache-2.0
+top.yukonga.miuix.kmp:miuix-ui-android:0.9.4 — Apache-2.0
