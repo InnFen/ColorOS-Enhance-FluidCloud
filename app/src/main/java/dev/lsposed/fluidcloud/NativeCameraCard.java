@@ -69,7 +69,7 @@ final class NativeCameraCard {
     private record Elevation(float nativeValue, float appliedValue) { }
     private record Decorations(CardHeaderDrawable background, CardHeaderDrawable foreground) { }
     private record MaterialOutline(android.view.ViewOutlineProvider provider, Rect mask, int width, int height) { }
-    private record External(int inset, Rect camera) { }
+    private record External(int inset, Rect camera, int anchorDy) { }
     /** target: px from the card top to the first visible content, or -1 for the original geometry. */
     /** anchorDy: card top minus capsule top; the expand morph starts and ends at the card top. */
     record Plan(float translationY, int inset, int target, int anchorDy) {
@@ -336,6 +336,10 @@ final class NativeCameraCard {
     /** All native branches, including interruption scenes, share one camera-top anchor. */
     static Morph morph(Rect mask, Rect camera, float scaleX, float scaleY, float pivotY,
                        float containerY, int cardTop, int width, int height) {
+        return morph(mask, camera, scaleX, scaleY, pivotY, containerY, cardTop, width, height, 0);
+    }
+    static Morph morph(Rect mask, Rect camera, float scaleX, float scaleY, float pivotY,
+                       float containerY, int cardTop, int width, int height, int anchorDy) {
         if (mask == null || mask.isEmpty() || camera == null || camera.isEmpty()
                 || !Float.isFinite(scaleX) || !Float.isFinite(scaleY) || scaleX <= .01f || scaleY <= .01f
                 || !Float.isFinite(pivotY) || !Float.isFinite(containerY) || width <= 0 || height <= 0) return null;
@@ -344,7 +348,10 @@ final class NativeCameraCard {
         int left = Math.max(0, Math.min(width - w, Math.round(mask.exactCenterX() - w / 2f)));
         int top = Math.max(0, Math.min(height - h, Math.round(mask.exactCenterY() - h / 2f)));
         Rect adjusted = new Rect(left, top, left + w, top + h);
-        float translation = camera.top - containerY - cardTop - pivotY + (pivotY - top) * scaleY;
+        // Collapsed, the morph sits on the capsule; fully expanded, on the (possibly offset) card top.
+        float progress = height <= camera.height() ? 1f
+                : Math.max(0f, Math.min(1f, (h * scaleY - camera.height()) / (float) (height - camera.height())));
+        float translation = camera.top + anchorDy * progress - containerY - cardTop - pivotY + (pivotY - top) * scaleY;
         return new Morph(adjusted, translation);
     }
     private Rect cameraFor(View card, boolean enabled) {
@@ -355,16 +362,23 @@ final class NativeCameraCard {
         if (position == null || position.inset() <= 0 || itemPosition(container, card) != 0) return null;
         ViewGroup root = root(container);
         if (root == null) return null;
-        Rect anchor = new Rect((Rect) Reflect.get(capsuleRect, root));
-        anchor.offset(0, position.anchorDy());
-        return anchor;
+        return new Rect((Rect) Reflect.get(capsuleRect, root));
+    }
+    /** px the card top sits below the capsule top (theme-style offset); 0 follows the capsule. */
+    private int anchorDy(View card) {
+        External added = external.get(card);
+        if (added != null) return added.anchorDy();
+        if (!(card.getParent() instanceof ViewGroup container)) return 0;
+        Position position = positions.get(container);
+        return position == null ? 0 : position.anchorDy();
     }
     private Morph morphFor(View card, Rect mask, boolean enabled) {
         Rect camera = cameraFor(card, enabled);
         if (camera == null) return null;
         View parent = (View) card.getParent();
         return morph(mask, camera, card.getScaleX(), card.getScaleY(), card.getPivotY(),
-                parent.getTranslationY() - parent.getScrollY(), card.getTop(), card.getWidth(), card.getHeight());
+                parent.getTranslationY() - parent.getScrollY(), card.getTop(), card.getWidth(), card.getHeight(),
+                anchorDy(card));
     }
     void beforeBlurBounds(View card, Rect mask, boolean enabled) {
         prepareMorphBounds(card, mask, enabled, true);
@@ -602,10 +616,11 @@ final class NativeCameraCard {
         return !external.isEmpty() && card.getParent() != null
                 && card.getParent().getClass() == externalParentType && external.containsKey(card);
     }
-    void prepareInstant(FrameLayout card, int inset, Rect camera) {
+    void prepareInstant(FrameLayout card, int inset, Rect camera) { prepareInstant(card, inset, camera, 0); }
+    void prepareInstant(FrameLayout card, int inset, Rect camera, int anchorDy) {
         if (card.getParent() == null) return;
         externalParentType = card.getParent().getClass();
-        external.put(card, new External(inset, new Rect(camera)));
+        external.put(card, new External(inset, new Rect(camera), anchorDy));
         // The OEM root blur already spans the padded root. Extend only known
         // decoration inside its content; text and button hit targets stay native.
         ArrayList<View> layers = new ArrayList<>();

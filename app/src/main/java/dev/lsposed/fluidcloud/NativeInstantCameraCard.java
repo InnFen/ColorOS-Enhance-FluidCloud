@@ -25,7 +25,7 @@ final class NativeInstantCameraCard {
     private String lastNote;
     private final java.util.Set<View> remeasure = java.util.Collections.newSetFromMap(new WeakHashMap<>());
     private record Owned(java.lang.ref.WeakReference<ViewGroup> container, int nativeTop, int appliedTop,
-                         int nativePadding, int appliedPadding, int inset, Rect camera) { }
+                         int nativePadding, int appliedPadding, int inset, Rect camera, int anchorDy) { }
     NativeInstantCameraCard(NativeCameraCard.Lookup lookup, NativeCameraCard cards) throws ReflectiveOperationException {
         this(lookup, cards, (container, region) -> {
             var surface = container.getRootSurfaceControl();
@@ -119,8 +119,8 @@ final class NativeInstantCameraCard {
         NativeCameraCard.Plan plan = cards.instantGeometry(container, nativeTop + container.getTranslationY());
         Rect camera = cards.cameraAnchor(container);
         if (plan == null || camera == null || camera.isEmpty()) { release(view); return; }
-        // The expand morph is anchored at the card top, which a theme-style offset moves off the capsule.
-        camera.offset(0, plan.anchorDy());
+        // The camera stays the capsule; the morph moves toward the (offset) card top as it expands.
+        int anchorDy = plan.anchorDy();
         int top = Math.round(plan.translationY() - container.getTranslationY());
         int padding = nativePadding + plan.inset();
         int lead = -1;
@@ -142,16 +142,17 @@ final class NativeInstantCameraCard {
                 + "px, padding " + padding + "px, target " + plan.target() + "px";
         if (!note.equals(lastNote)) { lastNote = note; try { cards.onInfo.accept(note); } catch (RuntimeException ignored) { } }
         owned.put(view, new Owned(new java.lang.ref.WeakReference<>(container), nativeTop, top,
-                nativePadding, padding, inset, new Rect(camera)));
+                nativePadding, padding, inset, new Rect(camera), anchorDy));
         if (params.topMargin != top) { params.topMargin = top; view.setLayoutParams(params); }
         if (view.getPaddingTop() != padding)
             view.setPadding(view.getPaddingLeft(), padding, view.getPaddingRight(), view.getPaddingBottom());
-        cards.prepareInstant(view, inset, camera);
+        cards.prepareInstant(view, inset, camera, anchorDy);
         observeTouch(container);
         // Keep outgoing native views adapted while their own disappear animation
         // runs. A replacement small capsule must never receive this geometry.
         for (var entry : owned.entrySet()) if (entry.getKey() != view && entry.getKey().getParent() == container)
-            cards.prepareInstant(entry.getKey(), entry.getValue().inset(), entry.getValue().camera());
+            cards.prepareInstant(entry.getKey(), entry.getValue().inset(), entry.getValue().camera(),
+                    entry.getValue().anchorDy());
     }
     boolean owns(View view) { return owned.containsKey(view); }
     void nativeChanged(ViewGroup container) { writtenRegions.remove(container); }
