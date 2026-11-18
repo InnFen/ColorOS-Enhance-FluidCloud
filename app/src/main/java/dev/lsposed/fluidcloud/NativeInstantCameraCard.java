@@ -125,13 +125,16 @@ final class NativeInstantCameraCard {
         if (plan.target() >= 0) {
             // Pull the content up: its first visible element goes to the target below the camera.
             lead = CameraAvoidance.lead(view, view.getPaddingTop());
+            if (lead >= 0) lead += cards.trimmer.trimmed(view);
             padding = Math.min(padding, CameraAvoidance.boxTop(plan.target(), lead));
+            cards.trimmer.apply(view, false, lead < 0 ? 0 : Math.max(0, lead - plan.target()));
             if (lead < 0 && remeasure.add(view)) view.post(() -> {
                 remeasure.remove(view);
                 if (Boolean.TRUE.equals(containers.get(container)) && owned.containsKey(view)
                         && CameraAvoidance.lead(view, view.getPaddingTop()) >= 0) update(container, true);
             });
         }
+        else cards.trimmer.restore(view);
         int inset = Math.max(1, padding - nativePadding);
         String note = "Instant camera card: native top padding " + nativePadding + "px, content lead " + lead
                 + "px, padding " + padding + "px, target " + plan.target() + "px";
@@ -206,6 +209,7 @@ final class NativeInstantCameraCard {
     }
     void release(FrameLayout view) {
         Owned old = owned.remove(view);
+        cards.trimmer.restore(view);
         if (old == null) return;
         cards.releaseInstant(view);
         if (view.getLayoutParams() instanceof FrameLayout.LayoutParams params && params.topMargin == old.appliedTop()) {

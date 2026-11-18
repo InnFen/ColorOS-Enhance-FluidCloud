@@ -20,6 +20,7 @@ public final class HookEntry extends XposedModule {
     MediaWaveFeature mediaWaves;
     volatile CloudConfig config = CloudConfig.from(Map.of());
     volatile int cameraGapDp = CameraAvoidance.DEFAULT_DP;
+    volatile int cameraTopOffsetDp = CameraAvoidance.DEFAULT_OFFSET_DP;
     private SharedPreferences preferences;
     private SharedPreferences.OnSharedPreferenceChangeListener preferenceListener;
 
@@ -141,10 +142,12 @@ public final class HookEntry extends XposedModule {
             Map<String, ?> values = preferences.getAll();
             config = CloudConfig.from(values);
             cameraGapDp = CameraAvoidance.gapDp(values);
+            cameraTopOffsetDp = CameraAvoidance.topOffsetDp(values);
         }
         catch (RuntimeException error) {
             config = CloudConfig.from(Map.of());
             cameraGapDp = CameraAvoidance.DEFAULT_DP;
+            cameraTopOffsetDp = CameraAvoidance.DEFAULT_OFFSET_DP;
             error("Configuration unavailable; native scene behavior retained", error);
         }
         if (adapter != null) {

@@ -48,6 +48,9 @@ final class NativeCameraCard {
     java.util.function.Consumer<Throwable> onFailure = error -> { };
     /** dp between the camera cutout and the first visible content; negative keeps the original geometry. */
     java.util.function.IntSupplier gapDp = () -> -1;
+    /** Card top like the theme dimen offset_between_status_bar_and_card, in dp; MIN_VALUE follows the capsule top. */
+    java.util.function.IntSupplier topOffsetDp = () -> Integer.MIN_VALUE;
+    final CameraAvoidance.Trimmer trimmer = new CameraAvoidance.Trimmer();
     java.util.function.Consumer<String> onInfo = message -> { };
     private String lastAvoidLog;
     private final NativeCardMaterial materials = new NativeCardMaterial();
@@ -135,7 +138,7 @@ final class NativeCameraCard {
     /** The header grows by the same amount the native container moves up: content stays clear. */
     static Plan plan(Rect capsule, Rect cutout, int width, int statusHeight,
                      float nativeY, int divider, boolean portrait, boolean unlocked) {
-        return plan(capsule, cutout, width, statusHeight, nativeY, divider, portrait, unlocked, -1);
+        return plan(capsule, cutout, width, statusHeight, nativeY, divider, portrait, unlocked, -1, -1);
     }
     /**
      * The card top still moves to the capsule top (camera anchor). With {@code gapPx >= 0}
@@ -143,15 +146,16 @@ final class NativeCameraCard {
      * camera cutout; the header never exceeds the original space.
      */
     static Plan plan(Rect capsule, Rect cutout, int width, int statusHeight,
-                     float nativeY, int divider, boolean portrait, boolean unlocked, int gapPx) {
-        Plan full = fullPlan(capsule, cutout, width, statusHeight, nativeY, divider, portrait, unlocked);
+                     float nativeY, int divider, boolean portrait, boolean unlocked, int gapPx, int manualInset) {
+        Plan full = fullPlan(capsule, cutout, width, statusHeight, nativeY, divider, portrait, unlocked, manualInset);
         if (full == null || gapPx < 0) return full;
-        int target = Math.min(full.inset() + Math.max(0, gapPx), cutout.bottom - capsule.top + gapPx);
+        int cardTop = Math.round(nativeY + divider) - full.inset();
+        int target = Math.min(full.inset() + Math.max(0, gapPx), cutout.bottom - cardTop + gapPx);
         int header = Math.max(1, Math.min(full.inset(), target));
         return new Plan(full.translationY(), header, Math.max(1, target));
     }
     private static Plan fullPlan(Rect capsule, Rect cutout, int width, int statusHeight,
-                     float nativeY, int divider, boolean portrait, boolean unlocked) {
+                     float nativeY, int divider, boolean portrait, boolean unlocked, int manualInset) {
         if (!portrait || !unlocked || capsule == null || cutout == null || capsule.isEmpty()
                 || cutout.isEmpty() || width <= 0 || statusHeight <= 0 || !Float.isFinite(nativeY)
                 || divider < 0 || capsule.top < 0 || capsule.bottom > statusHeight * 2
@@ -159,7 +163,7 @@ final class NativeCameraCard {
                 || Math.abs(cutout.exactCenterX() - width / 2f) > width * .15f
                 || !capsule.contains(cutout.centerX(), capsule.centerY())) return null;
         float nativeTop = nativeY + divider;
-        int inset = Math.round(nativeTop - capsule.top);
+        int inset = manualInset > 0 ? manualInset : Math.round(nativeTop - capsule.top);
         if (inset <= 0 || inset > statusHeight * 2 || capsule.top >= cutout.bottom) return null;
         return new Plan(nativeY - inset, inset);
     }
@@ -196,10 +200,38 @@ final class NativeCameraCard {
         int dp = gapDp.getAsInt();
         float density = resources.getDisplayMetrics().density;
         int gapPx = dp < 0 ? -1 : Math.round(dp * density);
-        Plan plan = plan(capsule, cameraRect, width, status, nativeY, divider, portrait, unlocked, gapPx);
+        int manualInset = manualInset(resources, density);
+        Plan plan = plan(capsule, cameraRect, width, status, nativeY, divider, portrait, unlocked, gapPx, manualInset);
         if (plan != null) logAvoidance(capsule, cameraRect, plan, nativeY, dp, density);
         return plan;
     }
+    /**
+     * How far the theme dimen offset_between_status_bar_and_card would move the card when set
+     * to the chosen dp, measured from the value this firmware actually uses; -1 when not chosen
+     * or the dimen is not found.
+     */
+    private int manualInset(android.content.res.Resources resources, float density) {
+        int offset = topOffsetDp.getAsInt();
+        if (offset == Integer.MIN_VALUE) return -1;
+        int id = 0;
+        for (String pkg : new String[]{"com.oplus.systemui.plugins", "com.android.systemui"}) {
+            id = resources.getIdentifier("offset_between_status_bar_and_card", "dimen", pkg);
+            if (id != 0) break;
+        }
+        String note;
+        int inset = -1;
+        if (id == 0) note = "Card top offset: dimen offset_between_status_bar_and_card not found, following capsule top";
+        else {
+            float nativeOffset = resources.getDimension(id);
+            inset = Math.round(nativeOffset - offset * density);
+            note = String.format(java.util.Locale.ROOT, "Card top offset: native %.1fdp -> %ddp, card moves up %dpx",
+                    nativeOffset / density, offset, inset);
+            if (inset <= 0) inset = -1;
+        }
+        if (!note.equals(lastOffsetLog)) { lastOffsetLog = note; try { onInfo.accept(note); } catch (RuntimeException ignored) { } }
+        return inset;
+    }
+    private String lastOffsetLog;
     /** One log line per distinct geometry, so the actual dp values can be read in the LSPosed log. */
     private void logAvoidance(Rect capsule, Rect camera, Plan plan, float nativeY, int dp, float density) {
         if (capsule == null || camera == null || density <= 0) return;
@@ -517,7 +549,9 @@ final class NativeCameraCard {
             // Place the first visible element at the target, never lower than the original.
             Integer lead = leads.get(card);
             top = Math.min(nativeTop + inset, CameraAvoidance.boxTop(target, lead == null ? -1 : lead));
-        }
+            // Whatever the margin cannot absorb comes out of the content's own top spacing.
+            if (child instanceof ViewGroup body) trimmer.apply(body, true, lead == null ? 0 : Math.max(0, lead - target));
+        } else if (child instanceof ViewGroup body) trimmer.restore(body);
         if (params.topMargin != top) {
             params.topMargin = top;
             child.setLayoutParams(params);
@@ -536,9 +570,10 @@ final class NativeCameraCard {
                 ? position.inset() : 0;
         View child = (View) Reflect.get(content, card);
         if (inset > 0 && child instanceof ViewGroup body) {
-            int lead = CameraAvoidance.lead(body, 0);
+            int measured = CameraAvoidance.lead(body, 0);
+            int lead = measured < 0 ? -1 : measured + trimmer.trimmed(body);
             if (lead >= 0 && !Integer.valueOf(lead).equals(leads.put(card, lead)) && position.target() >= 0) {
-                onInfo.accept("Camera card content lead " + lead + "px");
+                onInfo.accept("Camera card content lead " + lead + "px, target " + position.target() + "px");
                 card.post(card::requestLayout);
             }
             inset = cardInsets.getOrDefault(card, inset);
@@ -987,6 +1022,6 @@ final class NativeCameraCard {
                 params.topMargin = margin.nativeTop(); child.setLayoutParams(params);
             }
         }
-        margins.clear(); cardInsets.clear(); leads.clear();
+        margins.clear(); cardInsets.clear(); leads.clear(); trimmer.clear();
     }
 }
