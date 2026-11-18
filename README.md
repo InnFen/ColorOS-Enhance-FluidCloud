@@ -29,7 +29,7 @@
 
 ## 安裝
 
-1. 安裝 APK，在 LSPosed 啟用「Pixel 鎖屏」，作用域勾 **系統介面**。
+1. 安裝 APK，在 LSPosed 啟用「Pixel 鎖屏」，作用域勾 **系統介面**，要改息屏時鐘再勾 **息屏顯示**（com.oplus.aod）。
 2. 重啟系統介面（模組設定頁最下面的按鈕，需 root 授權）或重開機。
 3. 打開模組設定頁可以調時鐘大小、上下位置、數字圓潤度等，改動即時生效。
 
@@ -43,16 +43,18 @@
 - 日期：時鐘上下方、含「月／日／週」等字的較小文字。
 - 快捷按鈕：螢幕下方 22%、左右兩側 30% 內、36–120dp 的近似正方形按鈕。
 
-原時鐘不會被移除，只是設成透明，模組在同一位置畫 Pixel 時鐘，每一幀同步原時鐘的透明度、縮放和位置，所以 ColorOS 的解鎖、下拉通知等動畫照樣會作用在新時鐘上。
+找到的時鐘不加第二個 View，而是攔截它自己的繪製（`View.draw`、`onDraw`、`dispatchDraw` 及其類別的覆寫）和量尺寸（`View.measure`），讓 ColorOS 的時鐘本身畫出 Pixel 時鐘。位置、透明度和動畫都還是 ColorOS 在管，所以不會有兩個時鐘搶位置。若 2.5 秒內這個 View 一次都沒經過這些繪製入口，會在日誌說明並改用疊加備用模式。
 
 ## 排查
 
 LSPosed 日誌裡搜尋 `PixelLockscreen`：
 
-- `Clock bound: ...` 原時鐘的類名、id、位置、字號，以及新時鐘的字號和顏色
-- `Reserved clock height ...` 為雙行時鐘預留的高度
-- `Shortcuts: left=... right=...` 找到的兩個按鈕
-- `No lock screen clock recognised ...` 沒找到時鐘
+- `Clock hooks ready` 繪製攔截已裝好
+- `Clock candidates in '...'` 每個像時鐘的 View（類名#id、字號、是否顯示、為何跳過）和最後選中的那個
+- `In-place clock bound/updated` 綁定的時鐘；`In-place clock drawing (via ...)` 確認真的由模組在畫
+- `In-place clock never drew ...` 原地替換沒生效，改用疊加模式，附類別繼承鏈
+- `Shortcut styling active/paused: ...` 快捷按鈕為何在改或暫停
+- `Shortcuts: left=... right=... | corner views: ...` 找到的按鈕，及左右下角每個候選為何被跳過
 
 時鐘沒變、位置不對或按鈕沒變色：在模組設定打開「輸出鎖屏結構到 LSPosed 日誌」，鎖屏亮著等 20 秒，把 `[dump 1] [dump 2] ...` 那幾段日誌拿去排查。日誌只記介面結構，通知等文字只記字數。用完把開關關掉。
 

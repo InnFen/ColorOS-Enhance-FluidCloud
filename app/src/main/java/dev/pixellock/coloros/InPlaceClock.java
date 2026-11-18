@@ -3,13 +3,18 @@ package dev.pixellock.coloros;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.text.format.DateFormat;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.TextView;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -17,13 +22,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Turns ColorOS's own clock TextView into the Pixel clock: its onDraw is replaced by ours and its onMeasure asks
- * for room for the two big rows. The view stays where ColorOS puts it, so ColorOS keeps moving, shrinking and
- * fading it for notifications, the always-on display and unlock animations, and there is only ever one clock.
- * While notifications or live cards are showing it draws one small line inside ColorOS's normal clock box.
+ * Turns ColorOS's own clock view (a TextView, a row of digit views or a custom-drawn clock) into the Pixel clock:
+ * its drawing is replaced by ours and its measuring asks for room for the two big rows. The view stays where
+ * ColorOS puts it, so ColorOS keeps moving, shrinking and fading it for notifications, the always-on display and
+ * unlock animations, and there is only ever one clock. While notifications or live cards are showing it draws one
+ * line inside ColorOS's normal clock box.
  */
 final class InPlaceClock {
     private static final Pattern TWO_NUMBERS = Pattern.compile("(\\d{1,2})\\D+(\\d{2})");
+    private static final long FADE_MS = 280;
 
     static final class State {
         final ClockRenderer normal = new ClockRenderer();
@@ -32,64 +39,105 @@ final class InPlaceClock {
         boolean compact;
         boolean hideDate;
         boolean aodProcess;
+        boolean measure;
+        boolean restoreWillNotDraw;
         int offsetPx;
         float appliedShift;
         long switchedAt;
         boolean wasCompact;
+        long boundAt;
+        int draws;
+        boolean firstDrawLogged;
+        boolean drewInOnDraw;
+        long nextTick;
+        String describe = "";
     }
 
-    private static final Map<TextView, State> states = Collections.synchronizedMap(new WeakHashMap<>());
-    private static volatile boolean any;
+    private static final Map<View, State> states = Collections.synchronizedMap(new WeakHashMap<>());
+    /** Fast identity check for the global draw / measure hooks, which run for every view. */
+    @SuppressWarnings("unchecked")
+    private static volatile WeakReference<View>[] bound = new WeakReference[0];
     private static Method setMeasured;
     private static PowerManager power;
+    private static HookEntry module;
 
     private InPlaceClock() { }
 
     static State get(Object view) {
-        if (!any || !(view instanceof TextView)) return null;
-        return states.get(view);
+        WeakReference<View>[] refs = bound;
+        if (refs.length == 0) return null;
+        for (WeakReference<View> r : refs) {
+            if (r.get() == view) return states.get(view);
+        }
+        return null;
     }
 
-    static boolean isBound(TextView tv) { return states.containsKey(tv); }
+    static boolean isBound(View v) { return states.containsKey(v); }
+
+    /** How many times ColorOS asked the bound view to draw since it was bound, and for how long it's been bound. */
+    static int draws(View v) { State s = states.get(v); return s == null ? -1 : s.draws; }
+
+    static long boundFor(View v) {
+        State s = states.get(v);
+        return s == null ? 0 : SystemClock.uptimeMillis() - s.boundAt;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void rebuildIndex() {
+        List<WeakReference<View>> refs = new ArrayList<>();
+        synchronized (states) { for (View v : states.keySet()) if (v != null) refs.add(new WeakReference<>(v)); }
+        bound = refs.toArray(new WeakReference[0]);
+    }
 
     /** (Re)binds and restyles. Main thread. */
-    static void bind(HookEntry m, TextView tv, TextView date, Config cfg, Palette palette, boolean compact) {
-        m.hookClockClass(tv.getClass());
-        State s = states.get(tv);
+    static void bind(HookEntry m, View v, TextView date, Config cfg, Palette palette, boolean compact, boolean measure) {
+        module = m;
+        m.hookClockClass(v.getClass());
+        State s = states.get(v);
         boolean fresh = s == null;
-        if (fresh) s = new State();
-        Context c = tv.getContext();
+        if (fresh) {
+            s = new State();
+            s.boundAt = SystemClock.uptimeMillis();
+        }
+        Context c = v.getContext();
         int screenMin = Math.min(c.getResources().getDisplayMetrics().widthPixels,
                 c.getResources().getDisplayMetrics().heightPixels);
         float textSize = screenMin * 0.40f * cfg.clockScale / 100f;
         float dateSize = date != null && date.getTextSize() > 0
-                ? date.getTextSize() : Views.dp(tv, 17) * c.getResources().getConfiguration().fontScale;
+                ? date.getTextSize() : Views.dp(v, 17) * c.getResources().getConfiguration().fontScale;
         boolean withDate = cfg.clockDate && !compact;
         boolean changed = s.normal.style(Fonts.clock(m, c, cfg.clockRound, false), textSize, Fonts.date(m, c),
                 dateSize, palette, withDate, cfg.clockOverlap / 100f, cfg.clockGap / 1000f);
         changed |= s.aod.style(Fonts.clock(m, c, cfg.clockRound, true), textSize, Fonts.date(m, c),
                 dateSize, palette, withDate, cfg.clockOverlap / 100f, cfg.clockGap / 1000f);
-        int offset = Math.round(Views.dp(tv, cfg.clockOffsetDp));
-        changed |= s.compact != compact || s.offsetPx != offset || s.date != date || s.hideDate != cfg.clockDate;
+        int offset = Math.round(Views.dp(v, cfg.clockOffsetDp));
+        changed |= s.compact != compact || s.offsetPx != offset || s.date != date || s.hideDate != cfg.clockDate
+                || s.measure != measure;
         if (s.date != null && s.date != date) s.date.setTransitionAlpha(1f);
         if (!fresh && s.compact != compact) {
             s.wasCompact = s.compact;
-            s.switchedAt = android.os.SystemClock.uptimeMillis();
+            s.switchedAt = SystemClock.uptimeMillis();
         }
         s.date = date;
         s.compact = compact;
         s.hideDate = cfg.clockDate;
         s.offsetPx = offset;
+        s.measure = measure;
         // The position setting fine-tunes the big clock up or down from where ColorOS puts it.
         float shift = compact ? 0 : offset;
         if (shift != s.appliedShift) {
-            tv.setTranslationY(tv.getTranslationY() - s.appliedShift + shift);
+            v.setTranslationY(v.getTranslationY() - s.appliedShift + shift);
             s.appliedShift = shift;
         }
         s.aodProcess = m.inAodApp();
         if (fresh) {
-            states.put(tv, s);
-            any = true;
+            // Group views usually skip draw(); make sure ColorOS's clock goes through it so we can replace it.
+            if (v instanceof ViewGroup && v.willNotDraw()) {
+                v.setWillNotDraw(false);
+                s.restoreWillNotDraw = true;
+            }
+            states.put(v, s);
+            rebuildIndex();
         }
         // The big clock carries its own date underneath; in the notification layout ColorOS's date stays.
         if (date != null) {
@@ -97,64 +145,100 @@ final class InPlaceClock {
             if (date.getTransitionAlpha() != a) date.setTransitionAlpha(a);
         }
         if (fresh || changed) {
-            m.info("In-place clock " + (fresh ? "bound" : "updated") + ": " + Views.describe(tv)
+            s.describe = Views.describe(v);
+            m.info("In-place clock " + (fresh ? "bound" : "updated") + ": " + s.describe
                     + (compact ? " | one line (notifications showing)" : " | two rows")
+                    + (measure ? "" : " | keeps ColorOS size")
+                    + " | date " + (date == null ? "none (own date)" : Views.describe(date))
                     + " | colors " + Palette.hex(palette.clockLight) + "/" + Palette.hex(palette.clockDark));
-            tv.requestLayout();
-            tv.invalidate();
+            v.requestLayout();
+            v.invalidate();
         }
     }
 
-    static void release(TextView tv) {
-        State s = states.remove(tv);
-        any = !states.isEmpty();
+    static void release(View v) {
+        State s = states.remove(v);
+        rebuildIndex();
         if (s == null) return;
         if (s.date != null) s.date.setTransitionAlpha(1f);
-        if (s.appliedShift != 0) tv.setTranslationY(tv.getTranslationY() - s.appliedShift);
-        tv.requestLayout();
-        tv.invalidate();
+        if (s.appliedShift != 0) v.setTranslationY(v.getTranslationY() - s.appliedShift);
+        if (s.restoreWillNotDraw) v.setWillNotDraw(true);
+        v.requestLayout();
+        v.invalidate();
     }
 
-    /** Replacement for TextView.onDraw of a bound clock. */
-    static void draw(State s, TextView tv, Canvas canvas) {
-        boolean aodStyle = s.aodProcess || !interactive(tv.getContext());
+    // Draw hooks. View.draw / a class's own draw replace everything; onDraw then dispatchDraw run when only those
+    // are reached, and the flag keeps a group from drawing the clock twice in one pass.
+
+    static void drawWhole(State s, View v, Canvas canvas) {
+        s.drewInOnDraw = false;
+        draw(s, v, canvas, "draw");
+    }
+
+    static void drawFromOnDraw(State s, View v, Canvas canvas) {
+        draw(s, v, canvas, "onDraw");
+        s.drewInOnDraw = true;
+    }
+
+    static void drawFromDispatch(State s, View v, Canvas canvas) {
+        if (s.drewInOnDraw) { s.drewInOnDraw = false; return; }
+        draw(s, v, canvas, "dispatchDraw");
+    }
+
+    private static void draw(State s, View v, Canvas canvas, String via) {
+        s.draws++;
+        boolean aodStyle = s.aodProcess || !interactive(v.getContext());
         ClockRenderer r = aodStyle ? s.aod : s.normal;
-        String[] hm = time(tv);
+        String[] hm = time(v);
         s.normal.setTime(hm[0], hm[1]);
         s.aod.setTime(hm[0], hm[1]);
         String d = s.date != null ? Views.text(s.date).trim().replace('\n', ' ') : "";
-        if (d.isEmpty()) d = DateText.format(tv.getContext());
+        if (d.isEmpty()) d = DateText.format(v.getContext());
         s.normal.setDate(d);
         s.aod.setDate(d);
 
-        int left = tv.getPaddingLeft(), top = tv.getPaddingTop();
-        float w = tv.getWidth() - left - tv.getPaddingRight();
-        float h = tv.getHeight() - top - tv.getPaddingBottom();
+        int left = v.getPaddingLeft(), top = v.getPaddingTop();
+        float w = v.getWidth() - left - v.getPaddingRight();
+        float h = v.getHeight() - top - v.getPaddingBottom();
+        if (!s.firstDrawLogged && module != null) {
+            s.firstDrawLogged = true;
+            module.info("In-place clock drawing (via " + via + "): " + v.getClass().getName() + " " + Math.round(w)
+                    + "x" + Math.round(h) + "px, " + hm[0] + ":" + hm[1] + (aodStyle ? ", AOD style" : ""));
+        }
+        scheduleMinuteTick(s, v);
         if (w <= 0 || h <= 0) return;
         int save = canvas.save();
-        canvas.translate(tv.getScrollX() + left, tv.getScrollY() + top);
+        canvas.translate(v.getScrollX() + left, v.getScrollY() + top);
+        float maxLine = v instanceof TextView ? ((TextView) v).getTextSize() * 1.15f : h;
         // Short cross-fade when switching between the two-row and one-row clock.
-        long since = android.os.SystemClock.uptimeMillis() - s.switchedAt;
+        long since = SystemClock.uptimeMillis() - s.switchedAt;
         if (since < FADE_MS && s.wasCompact != s.compact) {
             float t = since / (float) FADE_MS;
             int a = canvas.saveLayerAlpha(0, 0, w, h, Math.round(255 * (1 - t)));
-            drawMode(r, canvas, w, h, s.wasCompact, tv);
+            drawMode(r, canvas, w, h, s.wasCompact, maxLine);
             canvas.restoreToCount(a);
             a = canvas.saveLayerAlpha(0, 0, w, h, Math.round(255 * t));
-            drawMode(r, canvas, w, h, s.compact, tv);
+            drawMode(r, canvas, w, h, s.compact, maxLine);
             canvas.restoreToCount(a);
-            tv.postInvalidateOnAnimation();
+            v.postInvalidateOnAnimation();
         } else {
-            drawMode(r, canvas, w, h, s.compact, tv);
+            drawMode(r, canvas, w, h, s.compact, maxLine);
         }
         canvas.restoreToCount(save);
     }
 
-    private static final long FADE_MS = 280;
+    /** Custom clocks may not redraw on their own every minute once we draw for them: ask for it ourselves. */
+    private static void scheduleMinuteTick(State s, View v) {
+        long now = System.currentTimeMillis();
+        long next = (now / 60_000L + 1) * 60_000L + 50;
+        if (s.nextTick == next) return;
+        s.nextTick = next;
+        v.postInvalidateDelayed(next - now);
+    }
 
-    private static void drawMode(ClockRenderer r, Canvas canvas, float w, float h, boolean compact, TextView tv) {
+    private static void drawMode(ClockRenderer r, Canvas canvas, float w, float h, boolean compact, float maxLine) {
         if (compact) {
-            r.drawLineFitted(canvas, w, h, tv.getTextSize() * 1.15f);
+            r.drawLineFitted(canvas, w, h, maxLine);
             return;
         }
         float bw = r.blockWidth(false), blockH = r.blockHeight(false);
@@ -166,23 +250,24 @@ final class InPlaceClock {
         canvas.restoreToCount(save);
     }
 
-    /** After TextView.onMeasure of a bound clock: ask for room for the two rows (and date). */
-    static void measure(State s, TextView tv, int widthSpec, int heightSpec) {
-        if (s.compact) return;
-        String[] hm = time(tv);
+    /** After View.measure of a bound clock: ask for room for the two rows (and date). */
+    static void measure(State s, View v, int widthSpec, int heightSpec) {
+        if (s.compact || !s.measure) return;
+        String[] hm = time(v);
         s.normal.setTime(hm[0], hm[1]);
-        int padW = tv.getPaddingLeft() + tv.getPaddingRight();
-        int padH = tv.getPaddingTop() + tv.getPaddingBottom();
-        int wantW = Math.max(tv.getMeasuredWidth(), s.normal.blockWidth(false) + padW);
-        int wantH = s.normal.blockHeight(false) + padH;
+        int padW = v.getPaddingLeft() + v.getPaddingRight();
+        int padH = v.getPaddingTop() + v.getPaddingBottom();
+        int wantW = Math.max(v.getMeasuredWidth(), s.normal.blockWidth(false) + padW);
+        int wantH = Math.max(v.getMeasuredHeight(), s.normal.blockHeight(false) + padH);
         int w = View.resolveSize(wantW, widthSpec);
         int h = View.resolveSize(wantH, heightSpec);
+        if (w == v.getMeasuredWidth() && h == v.getMeasuredHeight()) return;
         try {
             if (setMeasured == null) {
                 setMeasured = View.class.getDeclaredMethod("setMeasuredDimension", int.class, int.class);
                 setMeasured.setAccessible(true);
             }
-            setMeasured.invoke(tv, w, h);
+            setMeasured.invoke(v, w, h);
         } catch (ReflectiveOperationException ignored) {
             // Keep ColorOS's size; the clock is then scaled down to fit.
         }
@@ -197,17 +282,26 @@ final class InPlaceClock {
         }
     }
 
-    /** Hours and minutes from ColorOS's own text, so 12/24 h and time zone match the system. */
-    static String[] time(TextView tv) {
+    /** Hours and minutes from ColorOS's own text when there is one, so 12/24 h matches; otherwise system time. */
+    static String[] time(View v) {
         String h = null, min = null;
-        String t = Views.text(tv);
+        String t;
+        if (v instanceof TextView) {
+            t = Views.text(v);
+        } else {
+            StringBuilder sb = new StringBuilder();
+            for (TextView tv : Views.texts(v)) {
+                if (tv.getVisibility() == View.VISIBLE) sb.append(Views.text(tv)).append(' ');
+            }
+            t = sb.toString();
+        }
         Matcher mt = ClockController.TIME.matcher(t);
         if (!mt.find()) mt = TWO_NUMBERS.matcher(t);
         else mt.reset();
         if (mt.find()) { h = mt.group(1); min = mt.group(2); }
-        boolean is24 = DateFormat.is24HourFormat(tv.getContext());
-        if (h == null) {
-            Calendar now = Calendar.getInstance();
+        boolean is24 = DateFormat.is24HourFormat(v.getContext());
+        Calendar now = Calendar.getInstance();
+        if (h == null || Integer.parseInt(min) != now.get(Calendar.MINUTE)) {
             int hour = now.get(Calendar.HOUR_OF_DAY);
             if (!is24) { hour = hour % 12; if (hour == 0) hour = 12; }
             h = is24 ? String.format(Locale.ROOT, "%02d", hour) : String.valueOf(hour);

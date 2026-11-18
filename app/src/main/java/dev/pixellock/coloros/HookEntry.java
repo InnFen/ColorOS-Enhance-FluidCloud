@@ -52,7 +52,7 @@ public final class HookEntry extends XposedModule {
         installed = true;
         observePreferences();
         try {
-            hookClockClass(android.widget.TextView.class);
+            installClockHooks();
             installWindowHook();
         } catch (Throwable t) {
             error("Could not watch windows in " + process + "; module inactive", t);
@@ -85,47 +85,77 @@ public final class HookEntry extends XposedModule {
     private final java.util.Set<Method> clockHooks = new java.util.HashSet<>();
 
     /**
-     * Hooks onDraw / onMeasure of TextView and of the clock's own class chain (in case ColorOS overrides them),
-     * so a bound clock view draws the Pixel clock instead of its text. Unbound views run untouched.
+     * Global hooks that let a bound clock view draw the Pixel clock instead of its own content, whatever kind of
+     * view it is: View.draw (everything), TextView.onDraw and ViewGroup.dispatchDraw (when only those are
+     * reached), View.measure (room for the two rows). Unbound views run untouched after one identity check.
+     */
+    private void installClockHooks() {
+        try {
+            hookDrawMethod(View.class.getDeclaredMethod("draw", android.graphics.Canvas.class), 0);
+            hookDrawMethod(android.widget.TextView.class.getDeclaredMethod("onDraw", android.graphics.Canvas.class), 1);
+            hookDrawMethod(ViewGroup.class.getDeclaredMethod("dispatchDraw", android.graphics.Canvas.class), 2);
+            Method measure = View.class.getDeclaredMethod("measure", int.class, int.class);
+            clockHooks.add(measure);
+            hook(measure).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept(chain -> {
+                Object result = chain.proceed();
+                InPlaceClock.State st = InPlaceClock.get(chain.getThisObject());
+                if (st != null) {
+                    try {
+                        InPlaceClock.measure(st, (View) chain.getThisObject(),
+                                (Integer) chain.getArg(0), (Integer) chain.getArg(1));
+                    } catch (Throwable e) {
+                        error("Clock measure failed", e);
+                    }
+                }
+                return result;
+            });
+            info("Clock hooks ready: View.draw, TextView.onDraw, ViewGroup.dispatchDraw, View.measure");
+        } catch (Throwable t) {
+            error("Clock hooks failed; the clock can only be overlaid", t);
+        }
+    }
+
+    /** kind: 0 draw (whole view), 1 onDraw (content), 2 dispatchDraw (children). */
+    private void hookDrawMethod(Method method, int kind) {
+        if (!clockHooks.add(method)) return;
+        hook(method).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept(chain -> {
+            InPlaceClock.State st = InPlaceClock.get(chain.getThisObject());
+            if (st == null) return chain.proceed();
+            try {
+                View v = (View) chain.getThisObject();
+                android.graphics.Canvas canvas = (android.graphics.Canvas) chain.getArg(0);
+                if (kind == 0) InPlaceClock.drawWhole(st, v, canvas);
+                else if (kind == 1) InPlaceClock.drawFromOnDraw(st, v, canvas);
+                else InPlaceClock.drawFromDispatch(st, v, canvas);
+                return null;
+            } catch (Throwable e) {
+                error("Clock draw failed", e);
+                return chain.proceed();
+            }
+        });
+    }
+
+    /**
+     * ColorOS's clock class may override draw / onDraw / dispatchDraw without calling the framework version:
+     * hook its own overrides too, so a bound clock always draws ours.
      */
     synchronized void hookClockClass(Class<?> cls) {
-        for (Class<?> c = cls; c != null && android.widget.TextView.class.isAssignableFrom(c); c = c.getSuperclass()) {
+        for (Class<?> c = cls; c != null && c != View.class && View.class.isAssignableFrom(c)
+                && c != ViewGroup.class && c != android.widget.TextView.class; c = c.getSuperclass()) {
             for (Method method : c.getDeclaredMethods()) {
                 Class<?>[] t = method.getParameterTypes();
-                boolean draw = method.getName().equals("onDraw") && t.length == 1 && t[0] == android.graphics.Canvas.class;
-                boolean measure = method.getName().equals("onMeasure") && t.length == 2
-                        && t[0] == int.class && t[1] == int.class;
-                if ((!draw && !measure) || java.lang.reflect.Modifier.isAbstract(method.getModifiers())) continue;
-                if (!clockHooks.add(method)) continue;
+                if (t.length != 1 || t[0] != android.graphics.Canvas.class) continue;
+                if (java.lang.reflect.Modifier.isAbstract(method.getModifiers())) continue;
+                int kind;
+                switch (method.getName()) {
+                    case "draw": kind = 0; break;
+                    case "onDraw": kind = 1; break;
+                    case "dispatchDraw": kind = 2; break;
+                    default: continue;
+                }
+                if (clockHooks.contains(method)) continue;
                 try {
-                    if (draw) {
-                        hook(method).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept(chain -> {
-                            InPlaceClock.State st = InPlaceClock.get(chain.getThisObject());
-                            if (st == null) return chain.proceed();
-                            try {
-                                InPlaceClock.draw(st, (android.widget.TextView) chain.getThisObject(),
-                                        (android.graphics.Canvas) chain.getArg(0));
-                                return null;
-                            } catch (Throwable e) {
-                                error("Clock draw failed", e);
-                                return chain.proceed();
-                            }
-                        });
-                    } else {
-                        hook(method).setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE).intercept(chain -> {
-                            Object result = chain.proceed();
-                            InPlaceClock.State st = InPlaceClock.get(chain.getThisObject());
-                            if (st != null) {
-                                try {
-                                    InPlaceClock.measure(st, (android.widget.TextView) chain.getThisObject(),
-                                            (Integer) chain.getArg(0), (Integer) chain.getArg(1));
-                                } catch (Throwable e) {
-                                    error("Clock measure failed", e);
-                                }
-                            }
-                            return result;
-                        });
-                    }
+                    hookDrawMethod(method, kind);
                     info("Hooked " + c.getName() + "." + method.getName());
                 } catch (Throwable e) {
                     error("Could not hook " + c.getName() + "." + method.getName(), e);

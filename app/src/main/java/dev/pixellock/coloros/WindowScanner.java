@@ -50,7 +50,11 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     private boolean listening;
     private long lastDump;
     private ClockController clock;
-    private TextView inPlace;
+    private View inPlace;
+    /** Clock views whose in-place drawing never ran: they get the overlay instead. */
+    private final Set<View> overlayOnly = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    private String lastCandidates = "";
+    private String lastGate = "";
     private ShortcutStyler shortcuts;
     private String lastMiss = "";
     private final Runnable scanTask = () -> { scheduled = false; scanSafely(); };
@@ -103,6 +107,12 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
                 lastInvisibleScan = now;
                 schedule();
             }
+        } else if (inPlace != null) {
+            long now = SystemClock.uptimeMillis();
+            if (!inPlace.isShown() && now - lastInvisibleScan > 500) {
+                lastInvisibleScan = now;
+                schedule();
+            }
         }
         return true;
     }
@@ -134,7 +144,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     private void schedule() {
         if (scheduled) return;
         scheduled = true;
-        handler.postDelayed(scanTask, clock == null ? FAST_SCAN_DELAY_MS : SCAN_DELAY_MS);
+        handler.postDelayed(scanTask, clock == null && inPlace == null ? FAST_SCAN_DELAY_MS : SCAN_DELAY_MS);
     }
 
     private void scanSafely() {
@@ -174,14 +184,25 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
             TextView date = findDate(tree, clockView);
             boolean compact = cfg.clockAvoid && (!findObstacles(tree, clockView, date, screenW, screenH).isEmpty()
                     || anyShown(m.floatingCards()));
-            if (clockView instanceof TextView) {
+            if (inPlace != null && inPlace == clockView && InPlaceClock.draws(inPlace) == 0
+                    && InPlaceClock.boundFor(inPlace) > 2500 && effectivelyVisible(inPlace)) {
+                // ColorOS never asked this view to draw through anything we hook: fall back to the overlay.
+                m.info("In-place clock never drew in 2.5 s: " + Views.describe(inPlace)
+                        + " | class chain " + classChain(inPlace) + " | switching to overlay for this view");
+                overlayOnly.add(inPlace);
+                InPlaceClock.release(inPlace);
+                inPlace = null;
+            }
+            if (!overlayOnly.contains(clockView)) {
                 // Normal case: ColorOS's clock view itself draws the Pixel clock, so only one clock exists.
                 if (clock != null) { clock.release(); clock = null; }
                 if (inPlace != null && inPlace != clockView) InPlaceClock.release(inPlace);
-                inPlace = (TextView) clockView;
-                InPlaceClock.bind(m, inPlace, date, cfg, palette, compact);
+                // Check back once it should have drawn (see the fallback above).
+                if (!InPlaceClock.isBound(clockView)) handler.postDelayed(this::schedule, 2700);
+                inPlace = clockView;
+                // In the always-on display ColorOS's layout is left as it is (no resizing), so nothing jumps.
+                InPlaceClock.bind(m, inPlace, date, cfg, palette, compact, !aod);
             } else {
-                // Clocks drawn some other way: overlay fallback.
                 if (inPlace != null) { InPlaceClock.release(inPlace); inPlace = null; }
                 if (clock == null) clock = new ClockController(m, root, aod);
                 clock.setObstacles(cfg.clockAvoid ? findObstacles(tree, clockView, date, screenW, screenH)
@@ -196,10 +217,21 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         // Shortcut buttons are (re)detected only while the lock screen itself is showing, never over the bouncer.
         // The control center can open over the lock screen in the same window, so ask for a clock that is clearly
         // showing (not faded behind a panel) and a locked keyguard; no clock means no restyling at all.
-        boolean lockscreenShowing = clockView != null && effectivelyVisible(clockView, 0.5f) && keyguardLocked();
-        if (cfg.shortcuts && !aod && keyguardWindow && lockscreenShowing && keypads.isEmpty()) {
-            if (shortcuts == null) shortcuts = new ShortcutStyler(m);
-            shortcuts.apply(tree, screenW, screenH, palette, keypads);
+        if (cfg.shortcuts && !aod && keyguardWindow) {
+            String gate;
+            boolean locked = keyguardLocked();
+            boolean clockShowing = clockView != null && effectivelyVisible(clockView, 0.5f);
+            View panel = clockShowing ? null : openPanel(tree, screenW, screenH);
+            if (!keypads.isEmpty()) gate = "paused: PIN pad on screen";
+            else if (!locked) gate = "paused: keyguard not locked";
+            else if (panel != null) gate = "paused: panel open " + panel.getClass().getName() + "#" + Views.id(panel);
+            else if (clockView == null) gate = "paused: no lock screen clock found";
+            else gate = "active (clock " + (clockShowing ? "showing" : "faded, no panel open") + ")";
+            if (!gate.equals(lastGate)) { lastGate = gate; m.info("Shortcut styling " + gate); }
+            if (gate.startsWith("active")) {
+                if (shortcuts == null) shortcuts = new ShortcutStyler(m);
+                shortcuts.apply(tree, screenW, screenH, palette, keypads);
+            }
         }
 
         if (keyguardWindow && clockView == null && cfg.clock) {
@@ -238,6 +270,30 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         return alpha > min;
     }
 
+    /** A quick settings / control center panel that is actually showing over the lock screen. */
+    private View openPanel(List<View> tree, int screenW, int screenH) {
+        for (View v : tree) {
+            if (v == root || v.getHeight() < screenH * 0.3f || v.getWidth() < screenW * 0.6f) continue;
+            String name = (v.getClass().getName() + " " + Views.id(v)).toLowerCase(Locale.ROOT);
+            if (!(name.contains("qs") || name.contains("quicksetting") || name.contains("controlcenter")
+                    || name.contains("control_center") || name.contains("controlpanel") || name.contains("myfc"))) continue;
+            Rect r = Views.screen(v);
+            if (r.bottom <= 0 || r.top >= screenH || r.right <= 0 || r.left >= screenW) continue;
+            if (effectivelyVisible(v, 0.3f)) return v;
+        }
+        return null;
+    }
+
+    private static String classChain(View v) {
+        StringBuilder sb = new StringBuilder();
+        for (Class<?> c = v.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            if (sb.length() > 0) sb.append(" < ");
+            sb.append(c.getName());
+            if (c == View.class) break;
+        }
+        return sb.toString();
+    }
+
     private Set<View> findKeypads(List<View> tree) {
         Map<Character, View> digits = new HashMap<>();
         for (View v : tree) {
@@ -258,38 +314,66 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         float minSize = Views.dp(root, 36);
         TextView best = null;
         Map<ViewParent, List<TextView>> split = new HashMap<>();
+        StringBuilder cands = new StringBuilder();
         for (View v : tree) {
             if (!(v instanceof TextView)) continue;
             TextView tv = (TextView) v;
-            if (tv.getTextSize() < minSize) continue;
-            if (insideAny(tv, keypads)) continue;
-            Rect r = Views.screen(tv);
-            if (r.centerY() > screenH * (aod ? 0.8f : 0.6f)) continue;
             String text = Views.text(tv).trim();
-            if (text.length() <= 12 && (ClockController.TIME.matcher(text).find() || STACKED.matcher(text).matches())) {
+            boolean timeLike = text.length() <= 12
+                    && (ClockController.TIME.matcher(text).find() || STACKED.matcher(text).matches());
+            boolean digits = SPLIT_DIGITS.matcher(text).matches();
+            if (!timeLike && !digits) continue;
+            String why = null;
+            if (tv.getTextSize() < minSize) why = "small";
+            else if (insideAny(tv, keypads)) why = "keypad";
+            else if (Views.screen(tv).centerY() > screenH * (aod ? 0.8f : 0.6f)) why = "low";
+            if (timeLike && tv.getTextSize() >= Views.dp(root, 20)) {
+                cands.append(tv.getClass().getSimpleName()).append('#').append(Views.id(tv))
+                        .append(" ts=").append(Math.round(tv.getTextSize()))
+                        .append(effectivelyVisible(tv) ? " shown" : " faded")
+                        .append(why == null ? "" : " skip:" + why).append("; ");
+            }
+            if (why != null) continue;
+            if (timeLike) {
                 // A clock that is actually showing beats a bigger one that is faded out (ColorOS keeps several).
                 boolean shown = effectivelyVisible(tv), bestShown = best != null && effectivelyVisible(best);
                 if (best == null || (shown && !bestShown)
                         || (shown == bestShown && tv.getTextSize() > best.getTextSize())) best = tv;
-            } else if (SPLIT_DIGITS.matcher(text).matches()) {
+            } else {
                 split.computeIfAbsent(tv.getParent(), k -> new ArrayList<>()).add(tv);
             }
         }
-        if (best != null) return best;
-        for (Map.Entry<ViewParent, List<TextView>> e : split.entrySet()) {
-            if (e.getValue().size() >= 2 && e.getKey() instanceof View && e.getKey() != root) return (View) e.getKey();
+        View found = best;
+        if (found == null) {
+            for (Map.Entry<ViewParent, List<TextView>> e : split.entrySet()) {
+                if (e.getValue().size() >= 2 && e.getKey() instanceof View && e.getKey() != root) {
+                    found = (View) e.getKey();
+                    cands.append("digit group ").append(found.getClass().getSimpleName()).append('#')
+                            .append(Views.id(found)).append("; ");
+                    break;
+                }
+            }
         }
-        // Custom-drawn clocks: a big view whose class name says "clock".
-        View custom = null;
-        for (View v : tree) {
-            if (v instanceof TextView || v == root) continue;
-            String name = v.getClass().getName().toLowerCase(Locale.ROOT);
-            if (!name.contains("clock")) continue;
-            if (v.getWidth() < screenW * 0.4f || v.getHeight() < Views.dp(root, 60)) continue;
-            if (Views.screen(v).centerY() > screenH * 0.5f) continue;
-            if (custom == null || v.getWidth() * v.getHeight() < custom.getWidth() * custom.getHeight()) custom = v;
+        if (found == null) {
+            // Custom-drawn clocks: a big view whose class name says "clock".
+            View custom = null;
+            for (View v : tree) {
+                if (v instanceof TextView || v == root) continue;
+                String name = v.getClass().getName().toLowerCase(Locale.ROOT);
+                if (!name.contains("clock")) continue;
+                cands.append("custom ").append(v.getClass().getSimpleName()).append('#').append(Views.id(v))
+                        .append(' ').append(v.getWidth()).append('x').append(v.getHeight())
+                        .append(effectivelyVisible(v) ? " shown" : " faded").append("; ");
+                if (v.getWidth() < screenW * 0.4f || v.getHeight() < Views.dp(root, 60)) continue;
+                if (Views.screen(v).centerY() > screenH * 0.5f) continue;
+                if (custom == null || v.getWidth() * v.getHeight() < custom.getWidth() * custom.getHeight()) custom = v;
+            }
+            found = custom;
         }
-        return custom;
+        String log = "Clock candidates in '" + title + "': " + (cands.length() == 0 ? "none" : cands)
+                + "-> " + (found == null ? "none" : found.getClass().getName() + "#" + Views.id(found));
+        if (!log.equals(lastCandidates)) { lastCandidates = log; m.info(log); }
+        return found;
     }
 
     /**

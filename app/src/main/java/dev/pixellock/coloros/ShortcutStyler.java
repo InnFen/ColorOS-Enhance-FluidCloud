@@ -37,9 +37,11 @@ final class ShortcutStyler {
     };
 
     private static int rejectedForeign, rejectedLabel, rejectedCrowded;
+    private static final StringBuilder notes = new StringBuilder();
 
     void apply(List<View> tree, int screenW, int screenH, Palette p, Set<View> exclude) {
         rejectedForeign = rejectedLabel = rejectedCrowded = 0;
+        notes.setLength(0);
         // Pass 1: clickable views. Pass 2 (only for a side still empty): views with a background or an icon,
         // for buttons that react to touch listeners without being "clickable".
         View[] strict = pick(tree, screenW, screenH, exclude, true);
@@ -62,7 +64,8 @@ final class ShortcutStyler {
                 + " | right=" + (right == null ? "none" : Views.describe(right))
                 + " | bg " + Palette.hex(p.shortcutBg) + " icon " + Palette.hex(p.shortcutIcon)
                 + " | skipped: " + rejectedForeign + " in panels, " + rejectedLabel + " labelled, "
-                + rejectedCrowded + " in tile rows";
+                + rejectedCrowded + " in tile rows"
+                + (notes.length() == 0 ? "" : " | corner views: " + notes);
         if (!log.equals(lastLog)) { lastLog = log; m.info(log); }
     }
 
@@ -80,8 +83,10 @@ final class ShortcutStyler {
             if (excluded(v, exclude) || hasDigit(v)) continue;
             Rect r = Views.screen(v);
             if (r.centerY() < screenH * 0.78f) continue;
-            if (insideForeign(v)) { rejectedForeign++; continue; }
-            if (hasLabel(v)) { rejectedLabel++; continue; }
+            boolean corner = r.centerX() < screenW * 0.3f || r.centerX() > screenW * 0.7f;
+            if (insideForeign(v)) { rejectedForeign++; note(corner, v, "in panel " + foreignWord(v)); continue; }
+            if (hasLabel(v)) { rejectedLabel++; note(corner, v, "labelled"); continue; }
+            note(corner, v, "ok");
             // Prefer the outermost match: skip views inside an already chosen one.
             if (newLeft != null && Views.isAncestor(newLeft, v)) continue;
             if (newRight != null && Views.isAncestor(newRight, v)) continue;
@@ -124,6 +129,26 @@ final class ShortcutStyler {
             }
         }
         return false;
+    }
+
+    private static void note(boolean corner, View v, String what) {
+        if (!corner || notes.length() > 1200) return;
+        notes.append(v.getClass().getSimpleName()).append('#').append(Views.id(v)).append(' ')
+                .append(v.getWidth()).append('x').append(v.getHeight()).append(' ').append(what).append("; ");
+    }
+
+    private static String foreignWord(View v) {
+        View cur = v;
+        while (cur != null) {
+            String cls = cur.getClass().getName().toLowerCase(Locale.ROOT);
+            String id = Views.id(cur).toLowerCase(Locale.ROOT);
+            for (String word : FOREIGN) {
+                if (cls.contains(word) || id.contains(word)) return "'" + word + "' in " + cur.getClass().getSimpleName() + "#" + Views.id(cur);
+            }
+            ViewParent parent = cur.getParent();
+            cur = parent instanceof View ? (View) parent : null;
+        }
+        return "";
     }
 
     private static boolean insideForeign(View v) {
