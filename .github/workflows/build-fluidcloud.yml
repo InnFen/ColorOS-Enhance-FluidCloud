@@ -59,8 +59,12 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-configuration-cache :app:assembleDebug
+          VERSION="${{ github.run_number }}-${GITHUB_SHA::7}"
+          mkdir -p out
+          cp app/build/outputs/apk/debug/*.apk "out/FluidCloud-$VERSION.apk"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: fluidcloud-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: FluidCloud-${{ env.VERSION }}
+          path: out/*.apk

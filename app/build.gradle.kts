@@ -14,6 +14,9 @@ val debugSigning = Properties().apply {
 val robolectricSdk by configurations.creating
 // Separate package so it can sit next to (and be told apart from) the full module.
 val publicApplicationId = "io.github.howard_tse.colorosenhance.fluidcloud"
+// Each Actions run gets its own number, so builds can be told apart; local builds stay at run 0.
+val buildRun = (System.getenv("GITHUB_RUN_NUMBER") ?: "0").toIntOrNull() ?: 0
+val buildSha = (System.getenv("GITHUB_SHA") ?: "").take(7)
 val legacyApplicationId = "dev.howard.colorosenhance"
 android {
     namespace = "dev.howard.colorosenhance"
@@ -23,8 +26,8 @@ android {
         applicationId = publicApplicationId
         minSdk = 36
         targetSdk = 36
-        versionCode = 71
-        versionName = "1.31.1-fluidcloud"
+        versionCode = 1000 + buildRun
+        versionName = "1.31.1-fluidcloud.$buildRun" + (if (buildSha.isEmpty()) "" else "+$buildSha")
         buildConfigField("String", "PUBLIC_APPLICATION_ID", "\"$publicApplicationId\"")
         buildConfigField("String", "LEGACY_APPLICATION_ID", "\"$legacyApplicationId\"")
         manifestPlaceholders["publicApplicationId"] = publicApplicationId

@@ -20,7 +20,7 @@
 用 GitHub Actions（不用自己裝 Android SDK）：
 1. 把這份原始碼推到你自己的 GitHub 倉庫。
 2. Actions → 「Build fluid cloud APK」→ Run workflow。
-3. 跑完在 Artifacts 下載 `fluidcloud-debug-apk`。
+3. 跑完在 Artifacts 下載 `FluidCloud-<執行編號>-<commit>`；版本號是 `1.31.1-fluidcloud.<執行編號>`，App 的「關於」也會顯示。
 
 每次跑都會產生新的簽名；想讓之後的版本能直接覆蓋安裝，可以把固定的 PKCS12 金鑰 base64 後放進倉庫 Secrets `DEBUG_KEYSTORE_B64` 和 `DEBUG_KEYSTORE_PASSWORD`（alias 要是 `coloros-enhance-debug`）。
 
