@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pixel 鎖屏</string>
+    <string name="module_description">把 ColorOS 鎖屏時鐘改成 Pixel 式雙行取色時鐘，左右下角快捷按鈕改成取色色塊。作用域：系統介面。</string>
+</resources>
