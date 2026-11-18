@@ -137,7 +137,7 @@ final class NativeCameraCard {
                      float nativeY, int divider, boolean portrait, boolean unlocked, int avoidPercent) {
         Plan full = fullPlan(capsule, cutout, width, statusHeight, nativeY, divider, portrait, unlocked);
         if (full == null || avoidPercent >= 100) return full;
-        int applied = CameraAvoidance.apply(full.inset(), cutout.bottom - capsule.top, avoidPercent);
+        int applied = CameraAvoidance.apply(full.inset(), avoidPercent);
         return new Plan(full.translationY(), applied);
     }
     private static Plan fullPlan(Rect capsule, Rect cutout, int width, int statusHeight,

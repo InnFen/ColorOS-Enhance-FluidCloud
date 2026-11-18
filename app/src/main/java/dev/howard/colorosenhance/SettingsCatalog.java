@@ -112,7 +112,7 @@ public final class SettingsCatalog {
         items.add(flag("展开卡片","camera_card_expansion","从摄像头区域展开",
                 "卡片顶部贴合摄像头区域，展开与收起使用同一位置，并为内容保留避让空间。横屏挖孔位于侧边时保持系统处理。更新模块后需重启系统界面。"));
         items.add(new Item("展开卡片",dev.lsposed.fluidcloud.CameraAvoidance.KEY,"摄像头避让空间",
-                "卡片内容上方为摄像头留出的空白。100% 为原版；0% 时内容紧贴摄像头下缘，不会盖住摄像头。重新展开卡片后生效。",false,
+                "卡片内容上方为摄像头留出的空白。100% 为原版；0% 时不留额外空白，内容按原生边距贴近卡片顶部，摄像头可能落在内容区中间。重新展开卡片后生效。",false,
                 dev.lsposed.fluidcloud.CameraAvoidance.KEY,dev.lsposed.fluidcloud.CameraAvoidance.DEFAULT_PERCENT,0,100,5,1,"%",
                 new Visibility("camera_card_expansion",true),null));
         items.add(value("展开卡片","card_dim_enabled","展开时压暗背景",

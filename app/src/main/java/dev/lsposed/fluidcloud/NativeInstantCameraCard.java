@@ -22,6 +22,7 @@ final class NativeInstantCameraCard {
     private final WeakHashMap<ViewGroup, Region> writtenRegions = new WeakHashMap<>();
     private final WeakHashMap<ViewGroup, android.view.ViewTreeObserver.OnPreDrawListener> touchChecks = new WeakHashMap<>();
     private boolean preparingScene;
+    private String lastNote;
     private record Owned(java.lang.ref.WeakReference<ViewGroup> container, int nativeTop, int appliedTop,
                          int nativePadding, int appliedPadding, int inset, Rect camera) { }
     NativeInstantCameraCard(NativeCameraCard.Lookup lookup, NativeCameraCard cards) throws ReflectiveOperationException {
@@ -119,6 +120,8 @@ final class NativeInstantCameraCard {
         if (plan == null || camera == null || camera.isEmpty()) { release(view); return; }
         int top = Math.round(plan.translationY() - container.getTranslationY());
         int padding = nativePadding + plan.inset();
+        String note = "Instant camera card: native top padding " + nativePadding + "px, header " + plan.inset() + "px";
+        if (!note.equals(lastNote)) { lastNote = note; try { cards.onInfo.accept(note); } catch (RuntimeException ignored) { } }
         owned.put(view, new Owned(new java.lang.ref.WeakReference<>(container), nativeTop, top,
                 nativePadding, padding, plan.inset(), new Rect(camera)));
         if (params.topMargin != top) { params.topMargin = top; view.setLayoutParams(params); }

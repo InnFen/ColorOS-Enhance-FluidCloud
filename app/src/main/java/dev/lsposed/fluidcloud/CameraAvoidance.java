@@ -7,10 +7,11 @@ import java.util.Map;
  *
  * <p>The original module derives this space at runtime: it is the distance from the
  * capsule top (the camera anchor) down to where the OEM would place the card, so the
- * content keeps its native position. There is no fixed dp value. This class scales the
- * part of that space that lies below the camera cutout: 100% keeps the original
- * geometry, 0% leaves just enough header to cover the camera so content sits right
- * under its lower edge.
+ * content keeps its native position. There is no fixed dp value. This class scales that
+ * whole space linearly: 100% keeps the original geometry, 0% adds no header at all, so
+ * the content sits at its own native padding below the card top. Low values can let the
+ * content's top band reach the camera's height; the camera itself sits in the middle of
+ * the card, where card layouts normally leave room.
  */
 public final class CameraAvoidance {
     public static final String KEY = "camera_avoid_percent";
@@ -26,14 +27,12 @@ public final class CameraAvoidance {
 
     /**
      * @param inset original header space in px (capsule top to native card top)
-     * @param cameraClear px from the capsule top to the camera cutout bottom
-     * @param percent 0..100 share of the space below the camera to keep
-     * @return applied header space in px, never below the camera clearance and never above the original
+     * @param percent 0..100 share of that space to keep
+     * @return applied header space in px, at least 1 (so the card stays adapted) and never above the original
      */
-    static int apply(int inset, int cameraClear, int percent) {
+    static int apply(int inset, int percent) {
         if (inset <= 0) return inset;
-        int floor = Math.max(1, Math.min(inset, cameraClear));
         int share = Math.max(0, Math.min(100, percent));
-        return floor + Math.round((inset - floor) * (share / 100f));
+        return Math.max(1, Math.round(inset * (share / 100f)));
     }
 }
