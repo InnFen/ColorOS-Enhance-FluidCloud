@@ -171,6 +171,19 @@ final class ClockRenderer {
         canvas.restoreToCount(save);
     }
 
+    /** One-line clock with the date line above it, like ColorOS's own small clock, fitted into the box. */
+    void drawLineWithDate(Canvas canvas, float w, float h, float maxTextSize) {
+        if (date.isEmpty()) { drawLineFitted(canvas, w, h, maxTextSize); return; }
+        Paint.FontMetrics fm = datePaint.getFontMetrics();
+        float dateH = (fm.descent - fm.ascent) * 1.25f;
+        if (h < dateH * 2) { drawLineFitted(canvas, w, h, maxTextSize); return; }
+        canvas.drawText(date, w / 2f, -fm.ascent, datePaint);
+        int save = canvas.save();
+        canvas.translate(0, dateH);
+        drawLineFitted(canvas, w, h - dateH, maxTextSize);
+        canvas.restoreToCount(save);
+    }
+
     /** "HH:MM" in one row at the big text size, top edge at y=top. */
     private void drawSingleRow(Canvas canvas, float width, float top) {
         digits.getTextBounds("0123456789", 0, 10, bounds);

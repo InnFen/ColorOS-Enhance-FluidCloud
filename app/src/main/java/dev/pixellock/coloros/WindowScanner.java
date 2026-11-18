@@ -203,9 +203,11 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         boolean keyguardWindow = clockView != null || aod || KEYGUARD_TITLE.matcher(title).matches();
 
         // Screen off in SystemUI: the system AOD (or ColorOS's dozing keyguard) keeps its own clock untouched.
+        // The ColorOS 17 plugin clock is also the panoramic AOD clock: it stays Pixel (in place) while dozing.
         boolean dozing = !m.inAodApp() && !interactive();
+        boolean pluginClock = clockView != null && isPluginClock(clockView);
         if (dozing && clock != null) { clock.release(); clock = null; }
-        if (cfg.clock && clockView != null && !dozing) {
+        if (cfg.clock && clockView != null && (!dozing || (pluginClock && cfg.aod))) {
             TextView date = findDate(tree, clockView);
             boolean compact = cfg.clockAvoid && (!findObstacles(tree, clockView, date, screenW, screenH).isEmpty()
                     || anyShown(m.floatingCards()));
@@ -226,7 +228,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
                 if (!InPlaceClock.isBound(clockView)) handler.postDelayed(this::schedule, 2700);
                 inPlace = clockView;
                 // In the always-on display ColorOS's layout is left as it is (no resizing), so nothing jumps.
-                InPlaceClock.bind(m, inPlace, date, cfg, palette, compact, !aod);
+                InPlaceClock.bind(m, inPlace, date, cfg, palette, compact, !aod || pluginClock, pluginClock);
             } else if (aod) {
                 // No clock of our own on the always-on display: if its clock can't be restyled in place, leave it.
                 if (inPlace != null) { InPlaceClock.release(inPlace); inPlace = null; }
@@ -316,6 +318,30 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     }
 
     private String lastStyleClock = "";
+
+    /**
+     * ColorOS 17: the clock style plugin's view is the child of ClockPluginContainer / KeyguardClockPluginContainer
+     * (loaded from com.oplus.keyguard.clock.base, the style itself from com.oplus.keyguard.personality.clocks).
+     * The same view is shown on the lock screen and, dimmed, as the panoramic AOD.
+     */
+    private View findPluginClock(List<View> tree) {
+        View best = null;
+        for (View v : tree) {
+            if (!(v.getParent() instanceof View)) continue;
+            View parent = (View) v.getParent();
+            if (!classChain(parent).contains("ClockPluginContainer")) continue;
+            if (v.getWidth() <= 0 || v.getHeight() <= 0) continue;
+            boolean shown = effectivelyVisible(v, 0.05f);
+            boolean bestShown = best != null && effectivelyVisible(best, 0.05f);
+            if (best == null || (shown && !bestShown)
+                    || (shown == bestShown && v.getWidth() * v.getHeight() > best.getWidth() * best.getHeight())) best = v;
+        }
+        return best;
+    }
+
+    private static boolean isPluginClock(View v) {
+        return v.getParent() instanceof View && classChain((View) v.getParent()).contains("ClockPluginContainer");
+    }
 
     /**
      * ColorOS 17 loads the lock screen clock from a plugin into OplusKeyguardStyleClock. Log what that container
@@ -416,6 +442,13 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
             } else {
                 split.computeIfAbsent(tv.getParent(), k -> new ArrayList<>()).add(tv);
             }
+        }
+        View plugin = findPluginClock(tree);
+        if (plugin != null) {
+            String log = "Clock candidates in '" + title + "': plugin clock " + Views.describe(plugin)
+                    + " | class chain " + classChain(plugin);
+            if (!log.equals(lastCandidates)) { lastCandidates = log; m.info(log); }
+            return plugin;
         }
         View found = best;
         if (found == null) {

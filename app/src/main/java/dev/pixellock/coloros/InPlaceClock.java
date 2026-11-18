@@ -40,6 +40,10 @@ final class InPlaceClock {
         boolean hideDate;
         boolean aodProcess;
         boolean measure;
+        /** ColorOS 17 plugin clock: also the panoramic AOD clock, so it stays Pixel while the screen is off. */
+        boolean plugin;
+        /** ColorOS's date is part of the clock view we replace, so we always draw a date ourselves. */
+        boolean dateInside;
         boolean restoreWillNotDraw;
         int offsetPx;
         float appliedShift;
@@ -79,13 +83,13 @@ final class InPlaceClock {
      * system's (its clock is restyled inside the AOD app), we never draw a second AOD of our own.
      */
     static boolean stockNow(State s, View v) {
-        return !s.aodProcess && !interactive(v.getContext());
+        return !s.aodProcess && !s.plugin && !interactive(v.getContext());
     }
 
     /** Screen went off in SystemUI: give ColorOS its date back while its own clock shows. */
     static void dozing(View v) {
         State s = states.get(v);
-        if (s == null) return;
+        if (s == null || s.plugin) return;
         if (s.date != null) s.date.setTransitionAlpha(1f);
         v.requestLayout();
         v.invalidate();
@@ -108,6 +112,11 @@ final class InPlaceClock {
 
     /** (Re)binds and restyles. Main thread. */
     static void bind(HookEntry m, View v, TextView date, Config cfg, Palette palette, boolean compact, boolean measure) {
+        bind(m, v, date, cfg, palette, compact, measure, false);
+    }
+
+    static void bind(HookEntry m, View v, TextView date, Config cfg, Palette palette, boolean compact, boolean measure,
+                     boolean plugin) {
         module = m;
         m.hookClockClass(v.getClass());
         State s = states.get(v);
@@ -124,7 +133,8 @@ final class InPlaceClock {
                 ? date.getTextSize() : Views.dp(v, 17) * c.getResources().getConfiguration().fontScale;
         // The system AOD keeps its own layout: a wide clock box gets the one-line clock and ColorOS's own date.
         boolean lineBox = !measure && v.getHeight() > 0 && v.getHeight() < v.getWidth() * 0.6f;
-        boolean withDate = cfg.clockDate && !compact && !lineBox;
+        boolean dateInside = plugin || (date != null && Views.isAncestor(v, date));
+        boolean withDate = (cfg.clockDate || dateInside) && !compact && !lineBox;
         boolean changed = s.normal.style(Fonts.clock(m, c, cfg.clockRound, false), textSize, Fonts.date(m, c),
                 dateSize, palette, withDate, cfg.clockOverlap / 100f, cfg.clockGap / 1000f);
         changed |= s.aod.style(Fonts.clock(m, c, cfg.clockRound, true), textSize, Fonts.date(m, c),
@@ -142,6 +152,8 @@ final class InPlaceClock {
         s.hideDate = cfg.clockDate;
         s.offsetPx = offset;
         s.measure = measure;
+        s.plugin = plugin;
+        s.dateInside = dateInside;
         // The position setting fine-tunes the big clock up or down from where ColorOS puts it.
         float shift = compact ? 0 : offset;
         if (shift != s.appliedShift) {
@@ -206,7 +218,7 @@ final class InPlaceClock {
 
     private static void draw(State s, View v, Canvas canvas, String via) {
         s.draws++;
-        boolean aodStyle = s.aodProcess;
+        boolean aodStyle = s.aodProcess || (s.plugin && !interactive(v.getContext()));
         ClockRenderer r = aodStyle ? s.aod : s.normal;
         String[] hm = time(v);
         s.normal.setTime(hm[0], hm[1]);
@@ -237,14 +249,14 @@ final class InPlaceClock {
         if (since < FADE_MS && wasCompact != compact) {
             float t = since / (float) FADE_MS;
             int a = canvas.saveLayerAlpha(0, 0, w, h, Math.round(255 * (1 - t)));
-            drawMode(r, canvas, w, h, wasCompact, maxLine);
+            drawMode(r, canvas, w, h, wasCompact, maxLine, s.dateInside);
             canvas.restoreToCount(a);
             a = canvas.saveLayerAlpha(0, 0, w, h, Math.round(255 * t));
-            drawMode(r, canvas, w, h, compact, maxLine);
+            drawMode(r, canvas, w, h, compact, maxLine, s.dateInside);
             canvas.restoreToCount(a);
             v.postInvalidateOnAnimation();
         } else {
-            drawMode(r, canvas, w, h, compact, maxLine);
+            drawMode(r, canvas, w, h, compact, maxLine, s.dateInside);
         }
         canvas.restoreToCount(save);
     }
@@ -258,9 +270,11 @@ final class InPlaceClock {
         v.postInvalidateDelayed(next - now);
     }
 
-    private static void drawMode(ClockRenderer r, Canvas canvas, float w, float h, boolean compact, float maxLine) {
+    private static void drawMode(ClockRenderer r, Canvas canvas, float w, float h, boolean compact, float maxLine,
+                                 boolean dateAbove) {
         if (compact) {
-            r.drawLineFitted(canvas, w, h, maxLine);
+            if (dateAbove) r.drawLineWithDate(canvas, w, h, maxLine);
+            else r.drawLineFitted(canvas, w, h, maxLine);
             return;
         }
         float bw = r.blockWidth(false), blockH = r.blockHeight(false);

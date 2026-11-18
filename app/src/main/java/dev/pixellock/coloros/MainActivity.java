@@ -78,7 +78,7 @@ public final class MainActivity extends Activity {
         toggle(prefs, Config.CLOCK_DATE, "日期移到時鐘下方", "關掉則保留原本在時鐘上方的日期", true);
         toggle(prefs, Config.CLOCK_AVOID, "有通知時改成一行", "通知或流體雲卡片出現時，時鐘變成一行並跟著系統移到上方", true);
         toggle(prefs, Config.CLOCK_RESERVE, "為大時鐘預留空間（備用模式）", "只在系統時鐘不是一般文字元件時用到", true);
-        toggle(prefs, Config.AOD, "系統息屏的時鐘也改成 Pixel 樣式", "只改系統息屏原本的時鐘，不另畫息屏；作用域需勾「息屏」", true);
+        toggle(prefs, Config.AOD, "全景息屏的時鐘也用 Pixel 樣式", "全景息屏和鎖屏是同一個時鐘，關掉則息屏時維持原版", true);
 
         section("快捷按鈕");
         toggle(prefs, Config.SHORTCUTS, "取色色塊背景", "左右下角按鈕換成跟隨系統色的圓形色塊，圖示自動深淺", true);
