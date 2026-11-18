@@ -85,6 +85,9 @@ public final class MainActivity extends Activity {
         slider(prefs, Config.SHORTCUT_TONE, "按鈕深淺（0 最淺，9 最深）", "", Config.TONE_MIN, Config.TONE_MAX,
                 Config.TONE_DEFAULT);
 
+        section("流體雲");
+        toggle(prefs, Config.LIGHT_CARDS, "淺色模式用淺色卡片", "鎖屏和通知欄的流體雲卡片跟隨系統深淺色；狀態列膠囊和息屏時維持黑色", true);
+
         section("診斷");
         toggle(prefs, Config.DUMP, "輸出鎖屏結構到 LSPosed 日誌",
                 "排查用：只記錄介面結構，通知內容只記字數。用完請關掉", false);

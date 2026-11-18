@@ -19,6 +19,7 @@ public final class Config {
     public static final String AOD = "aod_enabled";
     public static final String CLOCK_OVERLAP = "clock_overlap";
     public static final String CLOCK_GAP = "clock_gap";
+    public static final String LIGHT_CARDS = "light_cards";
     public static final String DUMP = "dump_views";
 
     public static final int SCALE_MIN = 50, SCALE_MAX = 150, SCALE_DEFAULT = 100;
@@ -42,6 +43,7 @@ public final class Config {
     public final int shortcutTone;
     public final boolean clockAvoid;
     public final boolean aod;
+    public final boolean lightCards;
     public final boolean dump;
 
     private Config(Map<String, ?> m) {
@@ -57,6 +59,7 @@ public final class Config {
         shortcutTone = clamp(integer(m, SHORTCUT_TONE, TONE_DEFAULT), TONE_MIN, TONE_MAX);
         clockAvoid = bool(m, CLOCK_AVOID, true);
         aod = bool(m, AOD, true);
+        lightCards = bool(m, LIGHT_CARDS, true);
         dump = bool(m, DUMP, false);
     }
 
@@ -82,6 +85,6 @@ public final class Config {
         return "clock=" + clock + " scale=" + clockScale + " offsetDp=" + clockOffsetDp + " round=" + clockRound
                 + " overlap=" + clockOverlap + " gap=" + clockGap
                 + " reserve=" + clockReserve + " date=" + clockDate + " shortcuts=" + shortcuts
-                + " tone=" + shortcutTone + " avoid=" + clockAvoid + " aod=" + aod + " dump=" + dump;
+                + " tone=" + shortcutTone + " avoid=" + clockAvoid + " aod=" + aod + " lightCards=" + lightCards + " dump=" + dump;
     }
 }

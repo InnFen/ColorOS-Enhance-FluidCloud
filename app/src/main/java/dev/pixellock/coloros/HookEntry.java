@@ -54,6 +54,7 @@ public final class HookEntry extends XposedModule {
         try {
             installClockHooks();
             if (systemUi) ShortcutHook.install(this, param.getClassLoader());
+            if (systemUi) SeedlingTheme.install(this);
             installWindowHook();
         } catch (Throwable t) {
             error("Could not watch windows in " + process + "; module inactive", t);
@@ -183,6 +184,7 @@ public final class HookEntry extends XposedModule {
     private void registerScreenReceiver(android.content.Context context) {
         if (screenReceiver || !systemUi) return;
         screenReceiver = true;
+        SeedlingTheme.attach(context);
         try {
             android.content.IntentFilter f = new android.content.IntentFilter();
             f.addAction(android.content.Intent.ACTION_SCREEN_ON);
@@ -193,6 +195,7 @@ public final class HookEntry extends XposedModule {
                     WindowScanner[] copy;
                     synchronized (scanners) { copy = scanners.toArray(new WindowScanner[0]); }
                     for (WindowScanner s : copy) s.screenChanged(on);
+                    SeedlingTheme.screenChanged(on);
                 }
             }, f, android.content.Context.RECEIVER_NOT_EXPORTED);
         } catch (Throwable t) {
@@ -251,6 +254,7 @@ public final class HookEntry extends XposedModule {
         synchronized (scanners) { copy = scanners.toArray(new WindowScanner[0]); }
         for (WindowScanner s : copy) s.configChanged();
         ShortcutHook.configChanged();
+        SeedlingTheme.configChanged();
         info("Config: " + config);
     }
 
