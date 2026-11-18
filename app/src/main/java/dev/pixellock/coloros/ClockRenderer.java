@@ -1,6 +1,7 @@
 package dev.pixellock.coloros;
 
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
@@ -124,6 +125,144 @@ final class ClockRenderer {
         datePaint.setTextAlign(Paint.Align.LEFT);
         canvas.drawText(date, x, y + digitHeight + datePaint.getTextSize() * 0.9f - fm.ascent, datePaint);
         datePaint.setTextAlign(align);
+    }
+
+    // Morph between the centred two-row clock and the corner clock: every digit flies from its place in one
+    // layout to its place in the other while scaling, the colon fades in, and the date slides along.
+
+    /** One character placed in the view: baseline origin (x, y) and scale relative to the big text size. */
+    static final class Glyph {
+        final char ch;
+        final float x, y, scale;
+        final int color;
+        Glyph(char ch, float x, float y, float scale, int color) {
+            this.ch = ch; this.x = x; this.y = y; this.scale = scale; this.color = color;
+        }
+    }
+
+    /** Big clock glyphs (hours then minutes) as drawn in a w x h box; date[] = {left, baseline, scale} or NaN. */
+    Glyph[] layoutBig(float w, float h, float[] dateOut) {
+        float bw = blockWidth(false), bh = blockHeight(false);
+        float sc = Math.min(1f, Math.min(w / bw, h / bh));
+        float ox = (w - bw * sc) / 2f, oy = (h - bh * sc) / 2f;
+        digits.getTextBounds("0123456789", 0, 10, bounds);
+        float rowH = bounds.height();
+        float top = 1 - bounds.top;
+        Glyph[] out = new Glyph[hours.length() + minutes.length()];
+        int n = 0;
+        String[] rows = {hours, minutes};
+        for (int r = 0; r < 2; r++) {
+            String row = rows[r];
+            float x = (bw - rowWidth(row)) / 2f;
+            float base = r == 0 ? top : top + rowH + rowGap();
+            int digit = 0;
+            for (int i = 0; i < row.length(); i++) {
+                boolean isDigit = Character.isDigit(row.charAt(i));
+                int color = !isDigit || (r + digit) % 2 == 0 ? light : dark;
+                if (isDigit) digit++;
+                out[n++] = new Glyph(row.charAt(i), ox + x * sc, oy + base * sc, sc, color);
+                x += digits.measureText(row, i, i + 1) - overlapAfter(row, i);
+            }
+        }
+        if (showDate && !date.isEmpty()) {
+            Paint.FontMetrics fm = datePaint.getFontMetrics();
+            float baseline = 1 + rowH * 2 + rowGap() + dateGap() - fm.ascent;
+            dateOut[0] = ox + (bw / 2f) * sc - datePaint.measureText(date) * sc / 2f;
+            dateOut[1] = oy + baseline * sc;
+            dateOut[2] = sc;
+        } else {
+            dateOut[0] = Float.NaN;
+        }
+        return out;
+    }
+
+    /** Corner clock glyphs (hours, colon, minutes) with the block's top-left at (x, y); same date[] as above. */
+    Glyph[] layoutCorner(float x, float y, float digitHeight, float[] dateOut) {
+        String text = lineText();
+        float s = digitHeight / Math.max(1f, rowHeight());
+        digits.getTextBounds("0123456789", 0, 10, bounds);
+        float base = y + (1 - bounds.top) * s;
+        Glyph[] out = new Glyph[text.length()];
+        float cx = 0;
+        int digit = 0;
+        for (int i = 0; i < text.length(); i++) {
+            boolean isDigit = Character.isDigit(text.charAt(i));
+            int color = !isDigit || digit % 2 == 0 ? light : dark;
+            if (isDigit) digit++;
+            out[i] = new Glyph(text.charAt(i), x + cx * s, base, s, color);
+            cx += digits.measureText(text, i, i + 1) - overlapAfter(text, i);
+        }
+        if (!date.isEmpty()) {
+            Paint.FontMetrics fm = datePaint.getFontMetrics();
+            dateOut[0] = x;
+            dateOut[1] = y + digitHeight + datePaint.getTextSize() * 0.9f - fm.ascent;
+            dateOut[2] = 1f;
+        } else {
+            dateOut[0] = Float.NaN;
+        }
+        return out;
+    }
+
+    /** t = 0: big layout, t = 1: corner layout. */
+    void drawMorph(Canvas canvas, float t, Glyph[] big, float[] bigDate, Glyph[] corner, float[] cornerDate) {
+        int hoursLen = hours.length();
+        float gap = gapFrac * digits.getTextSize();
+        knock.setStrokeWidth(gap * 2);
+        int layer = canvas.saveLayer(null, null);
+        for (int i = 0; i < big.length && i < corner.length; i++) {
+            int ci = i < hoursLen ? i : i + 1; // the corner row has the colon after the hours
+            if (ci >= corner.length) break;
+            Glyph a = big[i], b = corner[ci];
+            drawGlyph(canvas, a.ch, lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.scale, b.scale, t),
+                    mix(a.color, b.color, t), 255, true);
+            if (i == hoursLen - 1 && hoursLen < corner.length) {
+                Glyph colon = corner[hoursLen];
+                // Fades in on top of the row; its ring is cut only once the morph has settled.
+                drawGlyph(canvas, colon.ch, colon.x, colon.y, colon.scale, colon.color, Math.round(255 * t), false);
+            }
+        }
+        canvas.restoreToCount(layer);
+        if (!date.isEmpty()) {
+            float alphaA = Float.isNaN(bigDate[0]) ? 0 : 1, alphaB = Float.isNaN(cornerDate[0]) ? 0 : 1;
+            float[] a = Float.isNaN(bigDate[0]) ? cornerDate : bigDate;
+            float[] b = Float.isNaN(cornerDate[0]) ? bigDate : cornerDate;
+            if (!Float.isNaN(a[0])) {
+                int alpha = Math.round(255 * lerp(alphaA, alphaB, t));
+                Paint.Align align = datePaint.getTextAlign();
+                int oldAlpha = datePaint.getAlpha();
+                datePaint.setTextAlign(Paint.Align.LEFT);
+                datePaint.setAlpha(oldAlpha * alpha / 255);
+                int save = canvas.save();
+                canvas.translate(lerp(a[0], b[0], t), lerp(a[1], b[1], t));
+                float ds = lerp(a[2], b[2], t);
+                canvas.scale(ds, ds);
+                canvas.drawText(date, 0, 0, datePaint);
+                canvas.restoreToCount(save);
+                datePaint.setTextAlign(align);
+                datePaint.setAlpha(oldAlpha);
+            }
+        }
+    }
+
+    private void drawGlyph(Canvas canvas, char ch, float x, float y, float scale, int color, int alpha, boolean cut) {
+        String g = String.valueOf(ch);
+        int save = canvas.save();
+        canvas.translate(x, y);
+        canvas.scale(scale, scale);
+        if (cut && gapFrac > 0) canvas.drawText(g, 0, 0, knock);
+        digits.setColor(color);
+        digits.setAlpha(Color.alpha(color) * alpha / 255);
+        canvas.drawText(g, 0, 0, digits);
+        canvas.restoreToCount(save);
+    }
+
+    private static float lerp(float a, float b, float t) { return a + (b - a) * t; }
+
+    private static int mix(int a, int b, float t) {
+        return Color.argb(Math.round(lerp(Color.alpha(a), Color.alpha(b), t)),
+                Math.round(lerp(Color.red(a), Color.red(b), t)),
+                Math.round(lerp(Color.green(a), Color.green(b), t)),
+                Math.round(lerp(Color.blue(a), Color.blue(b), t)));
     }
 
     /** @return true when the time changed */

@@ -17,6 +17,8 @@ final class Palette {
 
     private static volatile int version;
     private static boolean listening;
+    /** Called after the system theme (light/dark, dynamic colours) changed, so the clock restyles at once. */
+    static volatile Runnable onChange;
 
     /** accent1 tones the shortcut buttons can use, light to dark. */
     static final int[] TONES = {
@@ -31,10 +33,17 @@ final class Palette {
     private Palette(Context c, int tone) {
         night = (c.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
                 == Configuration.UI_MODE_NIGHT_YES;
-        // Clock: two close light tones, like the Pixel lock screen clock.
-        clockLight = color(c, android.R.color.system_accent1_100, 0xFFC8FFF4);
-        clockDark = color(c, android.R.color.system_accent1_200, 0xFF9DE0D0);
-        date = color(c, android.R.color.system_accent1_50, Color.WHITE);
+        // Clock: two close tones like the Pixel lock screen clock. Dark mode gets the pale end of the dynamic
+        // palette, light mode the deep end, and both follow the system when it switches.
+        if (night) {
+            clockLight = color(c, android.R.color.system_accent1_100, 0xFFC8FFF4);
+            clockDark = color(c, android.R.color.system_accent1_200, 0xFF9DE0D0);
+            date = color(c, android.R.color.system_accent1_50, Color.WHITE);
+        } else {
+            clockLight = color(c, android.R.color.system_accent1_600, 0xFF006B5E);
+            clockDark = color(c, android.R.color.system_accent1_700, 0xFF005046);
+            date = color(c, android.R.color.system_accent1_800, 0xFF00382F);
+        }
         // Shortcut buttons: a pale tonal block by default, like the fingerprint button. The icon picks dark or
         // light from the block's own brightness so it always stands out.
         int t = Math.max(0, Math.min(TONES.length - 1, tone));
@@ -74,7 +83,11 @@ final class Palette {
             listening = true;
             try {
                 context.getApplicationContext().registerComponentCallbacks(new ComponentCallbacks() {
-                    @Override public void onConfigurationChanged(Configuration newConfig) { version++; }
+                    @Override public void onConfigurationChanged(Configuration newConfig) {
+                        version++;
+                        Runnable r = onChange;
+                        if (r != null) r.run();
+                    }
                     @Override public void onLowMemory() { }
                 });
             } catch (Throwable ignored) {

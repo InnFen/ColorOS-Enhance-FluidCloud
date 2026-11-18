@@ -151,6 +151,9 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         }
     }
 
+    /** Light/dark mode or the dynamic colours changed: rescan so the clock and buttons take the new palette. */
+    void themeChanged() { handler.post(this::schedule); }
+
     /** Settings changed: undo disabled features right away, then rescan. Called from any thread. */
     void configChanged() {
         handler.post(() -> {

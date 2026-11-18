@@ -31,6 +31,8 @@ import java.util.regex.Pattern;
 final class InPlaceClock {
     private static final Pattern TWO_NUMBERS = Pattern.compile("(\\d{1,2})\\D+(\\d{2})");
     private static final long FADE_MS = 320;
+    /** Two rows <-> corner clock: digits fly and scale between the two layouts over this time. */
+    private static final long MORPH_MS = 520;
     /** Lock screen <-> always-on display: the digits change weight smoothly over this time. */
     private static final long WEIGHT_MS = 650;
     /** Corner (notification) clock: top-left position and digit height, as fractions of the screen. */
@@ -63,6 +65,8 @@ final class InPlaceClock {
         /** Extra upward shift so the corner clock fits inside the view when ColorOS puts the view lower down. */
         float cornerShift;
         boolean shiftPosted;
+        /** The view gave back its two-row size after the morph to the corner clock finished. */
+        boolean shrunk;
         int weightFrom = -1, weightTo = -1;
         long weightAt;
     }
@@ -144,7 +148,8 @@ final class InPlaceClock {
         // The system AOD keeps its own layout: a wide clock box gets the one-line clock and ColorOS's own date.
         boolean lineBox = !measure && v.getHeight() > 0 && v.getHeight() < v.getWidth() * 0.6f;
         boolean dateInside = plugin || (date != null && Views.isAncestor(v, date));
-        boolean withDate = (cfg.clockDate || dateInside) && !compact && !lineBox;
+        // The big layout keeps its date while the corner clock shows too, so the morph can slide it across.
+        boolean withDate = (cfg.clockDate || dateInside) && !lineBox;
         // One renderer for both: its weight moves between the lock screen and AOD cuts (see draw).
         boolean changed = s.normal.style(Fonts.clock(m, c, cfg.clockRound, false), cfg.clockRound, textSize,
                 Fonts.date(m, c), dateSize, palette, withDate, cfg.clockOverlap / 100f, cfg.clockGap / 1000f);
@@ -156,6 +161,7 @@ final class InPlaceClock {
         if (!fresh && s.compact != compact) {
             s.wasCompact = s.compact;
             s.switchedAt = SystemClock.uptimeMillis();
+            s.shrunk = false;
         }
         s.date = date;
         s.compact = compact;
@@ -182,6 +188,7 @@ final class InPlaceClock {
         // date only stays in the system AOD's own small clock box.
         if (date != null) {
             float a = withDate || compact ? 0f : 1f;
+            if (lineBox && !compact) a = 1f;
             if (date.getTransitionAlpha() != a) date.setTransitionAlpha(a);
         }
         if (fresh || changed) {
@@ -286,7 +293,15 @@ final class InPlaceClock {
         float[] corner = mode == MODE_CORNER || was == MODE_CORNER ? cornerOrigin(s, v, left, top) : null;
         // Short cross-fade when switching between the two-row and the corner clock.
         long since = SystemClock.uptimeMillis() - s.switchedAt;
-        if (since < FADE_MS && was != mode) {
+        boolean morph = (was == MODE_BIG && mode == MODE_CORNER) || (was == MODE_CORNER && mode == MODE_BIG);
+        if (morph && since < MORPH_MS) {
+            float t = ease(since / (float) MORPH_MS);
+            float[] bigDate = new float[3], cornerDate = new float[3];
+            ClockRenderer.Glyph[] big = r.layoutBig(w, h, bigDate);
+            ClockRenderer.Glyph[] cor = r.layoutCorner(corner[0], corner[1], s.cornerDigits, cornerDate);
+            r.drawMorph(canvas, mode == MODE_CORNER ? t : 1 - t, big, bigDate, cor, cornerDate);
+            v.postInvalidateOnAnimation();
+        } else if (!morph && since < FADE_MS && was != mode) {
             float t = since / (float) FADE_MS;
             int a = canvas.saveLayerAlpha(null, Math.round(255 * (1 - t)));
             drawMode(r, canvas, w, h, was, maxLine, s, corner);
@@ -297,6 +312,11 @@ final class InPlaceClock {
             v.postInvalidateOnAnimation();
         } else {
             drawMode(r, canvas, w, h, mode, maxLine, s, corner);
+            if (mode == MODE_CORNER && !s.shrunk) {
+                // The view kept its two-row size during the morph; give ColorOS its own size back now.
+                s.shrunk = true;
+                v.post(v::requestLayout);
+            }
         }
         canvas.restoreToCount(save);
     }
@@ -311,6 +331,12 @@ final class InPlaceClock {
     }
 
     private static final int MODE_BIG = 0, MODE_LINE = 1, MODE_CORNER = 2;
+
+    /** Fast out, slow in (cubic): the digits leave briskly and settle softly. */
+    private static float ease(float t) {
+        t = Math.max(0f, Math.min(1f, t));
+        return t < 0.5f ? 4 * t * t * t : 1 - (float) Math.pow(-2 * t + 2, 3) / 2;
+    }
 
     /**
      * Where the corner clock's top-left goes, in the view's content coordinates: a fixed spot under the status bar
@@ -362,7 +388,8 @@ final class InPlaceClock {
 
     /** After View.measure of a bound clock: ask for room for the two rows (and date). */
     static void measure(State s, View v, int widthSpec, int heightSpec) {
-        if (s.compact || !s.measure || stockNow(s, v)) return;
+        // While the morph to the corner clock runs the view keeps its two-row size, so nothing is cut off.
+        if ((s.compact && s.shrunk) || !s.measure || stockNow(s, v)) return;
         String[] hm = time(v);
         s.normal.setTime(hm[0], hm[1]);
         int padW = v.getPaddingLeft() + v.getPaddingRight();

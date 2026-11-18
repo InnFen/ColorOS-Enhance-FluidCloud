@@ -209,6 +209,12 @@ public final class HookEntry extends XposedModule {
             error("Settings unavailable; using defaults", t);
         }
         reload();
+        Palette.onChange = () -> {
+            WindowScanner[] all;
+            synchronized (scanners) { all = scanners.toArray(new WindowScanner[0]); }
+            for (WindowScanner s : all) s.themeChanged();
+            ShortcutHook.configChanged();
+        };
     }
 
     private void reload() {
