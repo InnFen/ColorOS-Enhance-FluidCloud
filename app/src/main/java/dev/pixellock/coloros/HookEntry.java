@@ -198,6 +198,29 @@ public final class HookEntry extends XposedModule {
         } catch (Throwable t) {
             error("Screen on/off receiver failed", t);
         }
+        Palette.onLog = this::info;
+        // Theme overlays (dynamic colours) and wallpaper colours: re-read the palette shortly after they change.
+        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        Runnable themeChanged = () -> main.postDelayed(() -> {
+            Palette.invalidate();
+            Runnable r = Palette.onChange;
+            if (r != null) r.run();
+        }, 600);
+        try {
+            android.content.IntentFilter f = new android.content.IntentFilter("android.intent.action.OVERLAY_CHANGED");
+            f.addDataScheme("package");
+            context.getApplicationContext().registerReceiver(new android.content.BroadcastReceiver() {
+                @Override public void onReceive(android.content.Context c, android.content.Intent i) { themeChanged.run(); }
+            }, f, android.content.Context.RECEIVER_NOT_EXPORTED);
+        } catch (Throwable t) {
+            error("Overlay change receiver failed", t);
+        }
+        try {
+            android.app.WallpaperManager wm = android.app.WallpaperManager.getInstance(context.getApplicationContext());
+            wm.addOnColorsChangedListener((colors, which) -> themeChanged.run(), main);
+        } catch (Throwable t) {
+            error("Wallpaper colour listener failed", t);
+        }
     }
 
     private void observePreferences() {

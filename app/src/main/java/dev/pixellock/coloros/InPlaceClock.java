@@ -233,6 +233,8 @@ final class InPlaceClock {
         }
         int w = currentWeight(s, now);
         s.normal.setWeight(w);
+        // Colours follow the same curve: lock screen tones -> the pale AOD tones.
+        s.normal.setAodMix((Fonts.WEIGHT_LOCK - w) / (float) (Fonts.WEIGHT_LOCK - Fonts.WEIGHT_AOD));
         if (w != s.weightTo) v.postInvalidateOnAnimation();
     }
 

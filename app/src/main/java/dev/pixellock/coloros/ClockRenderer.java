@@ -28,6 +28,9 @@ final class ClockRenderer {
     private String hours = "--", minutes = "--", date = "";
     private boolean showDate = true;
     private int light, dark;
+    private int lockLight, lockDark, lockDate, aodLight, aodDark, aodDate;
+    /** 0 = lock screen colours, 1 = always-on display colours; animated with the weight. */
+    private float aodMix;
     private float overlapFrac = 0.12f, gapFrac = 0.025f;
     /** Variable-font weight animation: faces derived from the clock face, cached per weight step. */
     private Typeface baseFace;
@@ -57,7 +60,8 @@ final class ClockRenderer {
         }
         boolean changed = (weight < 0 && digits.getTypeface() != clockFace) || digits.getTextSize() != textSize
                 || datePaint.getTypeface() != dateFace || datePaint.getTextSize() != dateSize
-                || light != p.clockLight || dark != p.clockDark || datePaint.getColor() != p.date
+                || lockLight != p.clockLight || lockDark != p.clockDark || lockDate != p.date
+                || aodLight != p.aodLight || aodDark != p.aodDark || aodDate != p.aodDate
                 || showDate != withDate || overlapFrac != overlap || gapFrac != gap;
         if (!changed) return false;
         if (weight < 0) {
@@ -68,9 +72,13 @@ final class ClockRenderer {
         knock.setTextSize(textSize);
         datePaint.setTypeface(dateFace);
         datePaint.setTextSize(dateSize);
-        datePaint.setColor(p.date);
-        light = p.clockLight;
-        dark = p.clockDark;
+        lockLight = p.clockLight;
+        lockDark = p.clockDark;
+        lockDate = p.date;
+        aodLight = p.aodLight;
+        aodDark = p.aodDark;
+        aodDate = p.aodDate;
+        applyAodMix();
         showDate = withDate;
         overlapFrac = overlap;
         gapFrac = gap;
@@ -96,6 +104,20 @@ final class ClockRenderer {
         digits.setTypeface(f);
         knock.setTypeface(f);
         weight = w;
+    }
+
+    /** Blends the lock screen colours toward the AOD ones (0..1), for a smooth change when the screen dozes. */
+    void setAodMix(float f) {
+        f = Math.max(0f, Math.min(1f, f));
+        if (f == aodMix) return;
+        aodMix = f;
+        applyAodMix();
+    }
+
+    private void applyAodMix() {
+        light = mix(lockLight, aodLight, aodMix);
+        dark = mix(lockDark, aodDark, aodMix);
+        datePaint.setColor(mix(lockDate, aodDate, aodMix));
     }
 
     /** Height of the corner clock block (one line plus the date under it) for a given digit height. */

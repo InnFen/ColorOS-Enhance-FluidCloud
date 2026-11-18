@@ -35,6 +35,8 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
             Pattern.compile("(?i).*(notificationshade|keyguard|lockscreen|lock_screen|statusbar_expanded|aod|doze).*");
     private static final Pattern DATE_HINT =
             Pattern.compile("(?i).*(月|日|周|週|星期|mon|tue|wed|thu|fri|sat|sun|\\d{1,2}/\\d{1,2}).*");
+    private static final Pattern STACK_DECOR =
+            Pattern.compile("(?i)(Shelf|Footer|EmptyShade|SectionHeader|StackScrollerDecorView)");
     private static final Pattern SPLIT_DIGITS = Pattern.compile("\\d{1,2}");
     private static final Pattern STACKED = Pattern.compile("\\s*\\d{1,2}\\s*\\n\\s*\\d{2}\\s*");
 
@@ -133,6 +135,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     /** Screen turned on or off (SystemUI only). Called on the main thread. */
     void screenChanged(boolean on) {
         handler.post(() -> {
+            if (on) Palette.invalidate();
             if (!on) {
                 // The always-on display is the system's: no overlay of ours, ColorOS's clock and date as they are.
                 if (clock != null) { clock.release(); clock = null; }
@@ -505,8 +508,14 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
             if (r.bottom <= screenH * 0.1f || r.top >= screenH * 0.92f) continue;
             String chain = classChain(v);
             if (chain.contains("ExpandableNotificationRow")) return "notification " + v.getClass().getSimpleName();
+            // Everything else in the lock screen stack is an ExpandableView too: fluid cloud cards
+            // (NotificationSeedingContainer), the media player (MediaContainerView), custom cards and capsules.
+            // Only the shelf, footer and section headers are left out.
+            if (chain.contains("ExpandableView") && !STACK_DECOR.matcher(chain).find()) {
+                return "card " + v.getClass().getSimpleName();
+            }
             String name = v.getClass().getName().toLowerCase(Locale.ROOT);
-            boolean live = name.contains("seedling") || name.contains("fluid") || name.contains("pantanal")
+            boolean live = name.contains("seedling") || name.contains("seeding") || name.contains("fluid") || name.contains("pantanal")
                     || name.contains("livecard") || name.contains("liveactivity");
             if (live && v.getWidth() >= screenW * 0.55f && r.top >= screenH * 0.08f && v.getHeight() <= screenH * 0.45f) {
                 return "live card " + v.getClass().getSimpleName();
