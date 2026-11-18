@@ -7,6 +7,9 @@ import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Draws the Pixel-style clock. Big mode: hours over minutes, digits overlapping tightly in two alternating tones,
  * each digit cutting a thin transparent ring out of what was drawn before it (the digit to its left and the row
@@ -25,6 +28,11 @@ final class ClockRenderer {
     private boolean showDate = true;
     private int light, dark;
     private float overlapFrac = 0.12f, gapFrac = 0.025f;
+    /** Variable-font weight animation: faces derived from the clock face, cached per weight step. */
+    private Typeface baseFace;
+    private int round;
+    private int weight = -1;
+    private final Map<Integer, Typeface> faces = new HashMap<>();
 
     ClockRenderer() {
         datePaint.setTextAlign(Paint.Align.CENTER);
@@ -38,16 +46,24 @@ final class ClockRenderer {
      * @param gap     width of the cut-out ring around each digit, as a fraction of the text size
      * @return true when anything changed
      */
-    boolean style(Typeface clockFace, float textSize, Typeface dateFace, float dateSize, Palette p, boolean withDate,
-                  float overlap, float gap) {
-        boolean changed = digits.getTypeface() != clockFace || digits.getTextSize() != textSize
+    boolean style(Typeface clockFace, int round, float textSize, Typeface dateFace, float dateSize, Palette p,
+                  boolean withDate, float overlap, float gap) {
+        if (baseFace != clockFace || this.round != round) {
+            baseFace = clockFace;
+            this.round = round;
+            faces.clear();
+            weight = -1;
+        }
+        boolean changed = (weight < 0 && digits.getTypeface() != clockFace) || digits.getTextSize() != textSize
                 || datePaint.getTypeface() != dateFace || datePaint.getTextSize() != dateSize
                 || light != p.clockLight || dark != p.clockDark || datePaint.getColor() != p.date
                 || showDate != withDate || overlapFrac != overlap || gapFrac != gap;
         if (!changed) return false;
-        digits.setTypeface(clockFace);
+        if (weight < 0) {
+            digits.setTypeface(clockFace);
+            knock.setTypeface(clockFace);
+        }
         digits.setTextSize(textSize);
-        knock.setTypeface(clockFace);
         knock.setTextSize(textSize);
         datePaint.setTypeface(dateFace);
         datePaint.setTextSize(dateSize);
@@ -58,6 +74,56 @@ final class ClockRenderer {
         overlapFrac = overlap;
         gapFrac = gap;
         return true;
+    }
+
+    /**
+     * Sets the digit weight (100..1000, Google Sans Flex 'wght' axis), in steps of 10 so the derived faces can be
+     * cached. Used to fade smoothly between the bold lock screen digits and the thin always-on display ones.
+     */
+    void setWeight(int w) {
+        if (baseFace == null) return;
+        w = Math.max(100, Math.min(1000, Math.round(w / 10f) * 10));
+        if (w == weight) return;
+        Typeface f = faces.get(w);
+        if (f == null) {
+            Paint scratch = new Paint();
+            scratch.setTypeface(baseFace);
+            boolean ok = scratch.setFontVariationSettings("'wght' " + w + ", 'wdth' 100, 'opsz' 144, 'ROND' " + round);
+            f = ok && scratch.getTypeface() != null ? scratch.getTypeface() : Typeface.create(baseFace, w, false);
+            faces.put(w, f);
+        }
+        digits.setTypeface(f);
+        knock.setTypeface(f);
+        weight = w;
+    }
+
+    /** Height of the corner clock block (one line plus the date under it) for a given digit height. */
+    float cornerHeight(float digitHeight) {
+        if (date.isEmpty()) return digitHeight;
+        Paint.FontMetrics fm = datePaint.getFontMetrics();
+        return digitHeight + datePaint.getTextSize() * 0.9f + (fm.descent - fm.ascent);
+    }
+
+    /**
+     * Notification layout: a smaller one-line clock ("10:50") with its top-left corner at (x, y), the same digit
+     * style as the big clock, and the date left-aligned right under it, like Pixel's small clock.
+     */
+    void drawCorner(Canvas canvas, float x, float y, float digitHeight) {
+        String text = lineText();
+        float gap = gapFrac * digits.getTextSize();
+        float rowW = rowWidth(text) + 2 * gap;
+        float scale = digitHeight / Math.max(1f, rowHeight());
+        int save = canvas.save();
+        canvas.translate(x - gap * scale, y - gap * scale);
+        canvas.scale(scale, scale);
+        drawSingleRow(canvas, rowW, gap);
+        canvas.restoreToCount(save);
+        if (date.isEmpty()) return;
+        Paint.FontMetrics fm = datePaint.getFontMetrics();
+        Paint.Align align = datePaint.getTextAlign();
+        datePaint.setTextAlign(Paint.Align.LEFT);
+        canvas.drawText(date, x, y + digitHeight + datePaint.getTextSize() * 0.9f - fm.ascent, datePaint);
+        datePaint.setTextAlign(align);
     }
 
     /** @return true when the time changed */

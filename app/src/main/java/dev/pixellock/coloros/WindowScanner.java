@@ -46,6 +46,8 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     private long lastInvisibleScan;
     private boolean cardsRegistered;
     private String lastObstacles = "";
+    private String lastLayout = "";
+    private String lastCards = "";
     private boolean scheduled;
     private boolean listening;
     private long lastDump;
@@ -209,8 +211,11 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         if (dozing && clock != null) { clock.release(); clock = null; }
         if (cfg.clock && clockView != null && (!dozing || (pluginClock && cfg.aod))) {
             TextView date = findDate(tree, clockView);
-            boolean compact = cfg.clockAvoid && (!findObstacles(tree, clockView, date, screenW, screenH).isEmpty()
-                    || anyShown(m.floatingCards()));
+            String why = cfg.clockAvoid ? compactReason(tree, clockView, screenW, screenH) : null;
+            boolean compact = why != null;
+            String layout = compact ? "one line (" + why + ")" : cfg.clockAvoid ? "two rows (no notifications)"
+                    : "two rows (one-line mode off)";
+            if (!layout.equals(lastLayout)) { lastLayout = layout; m.info("Clock layout: " + layout); }
             if (inPlace != null && inPlace == clockView && InPlaceClock.draws(inPlace) == 0
                     && InPlaceClock.boundFor(inPlace) > 2500 && effectivelyVisible(inPlace)) {
                 // ColorOS never asked this view to draw through anything we hook: fall back to the overlay.
@@ -484,6 +489,33 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     }
 
     /**
+     * Why the clock should be one line right now, or null for the two-row clock. Only real notification rows
+     * (ExpandableNotificationRow) and live cards count, never any wide box with a background, so the clock goes
+     * back to two rows as soon as the last notification is gone.
+     */
+    private String compactReason(List<View> tree, View clockView, int screenW, int screenH) {
+        float minH = Views.dp(root, 36);
+        for (View v : tree) {
+            if (v == clockView || Views.isAncestor(clockView, v) || Views.isAncestor(v, clockView)) continue;
+            if (v.getHeight() < minH || !Views.shownOnThisThread(v) || !effectivelyVisible(v, 0.2f)) continue;
+            Rect r = Views.screen(v);
+            if (r.bottom <= screenH * 0.1f || r.top >= screenH * 0.92f) continue;
+            String chain = classChain(v);
+            if (chain.contains("ExpandableNotificationRow")) return "notification " + v.getClass().getSimpleName();
+            String name = v.getClass().getName().toLowerCase(Locale.ROOT);
+            boolean live = name.contains("seedling") || name.contains("fluid") || name.contains("pantanal")
+                    || name.contains("livecard") || name.contains("liveactivity");
+            if (live && v.getWidth() >= screenW * 0.55f && r.top >= screenH * 0.08f && v.getHeight() <= screenH * 0.45f) {
+                return "live card " + v.getClass().getSimpleName();
+            }
+        }
+        for (View c : m.floatingCards()) {
+            if (Views.shownOnThisThread(c)) return "live card window " + c.getClass().getSimpleName();
+        }
+        return null;
+    }
+
+    /**
      * Notification rows and cards in the keyguard window: wide boxes with a background (or a notification-ish
      * class name) that are not part of the clock. The clock controller keeps itself above the highest one.
      */
@@ -534,12 +566,19 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         for (View v : Views.visibleTree(root, java.util.Collections.emptySet())) {
             if (v.getWidth() < screenW * 0.55f || v.getHeight() < minH || v.getHeight() > screenH * 0.45f) continue;
             if (!hasVisibleBackground(v) || !Views.shownOnThisThread(v)) continue;
-            if (Views.screen(v).top < screenH * 0.08f) continue;
+            // A plain colour fill is a scrim or a bar, not a card.
+            if (v.getBackground() instanceof android.graphics.drawable.ColorDrawable) continue;
+            Rect r = Views.screen(v);
+            if (r.top < screenH * 0.08f || r.top > screenH * 0.7f || v.getHeight() > screenH * 0.4f) continue;
             boolean nested = false;
             for (View o : found) if (Views.isAncestor(o, v)) { nested = true; break; }
             if (!nested) found.add(v);
         }
         if (found.isEmpty()) { clearCards(); return; }
+        StringBuilder sb = new StringBuilder();
+        for (View o : found) sb.append(o.getClass().getName()).append('#').append(Views.id(o)).append(' ');
+        String log = "Live card in window '" + title + "': " + sb;
+        if (!log.equals(lastCards)) { lastCards = log; m.info(log); }
         cardsRegistered = true;
         m.setFloatingCards(this, found);
     }
@@ -547,6 +586,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
     private void clearCards() {
         if (!cardsRegistered) return;
         cardsRegistered = false;
+        lastCards = "";
         m.setFloatingCards(this, java.util.Collections.emptyList());
     }
 

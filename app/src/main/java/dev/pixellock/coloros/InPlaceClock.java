@@ -30,7 +30,11 @@ import java.util.regex.Pattern;
  */
 final class InPlaceClock {
     private static final Pattern TWO_NUMBERS = Pattern.compile("(\\d{1,2})\\D+(\\d{2})");
-    private static final long FADE_MS = 280;
+    private static final long FADE_MS = 320;
+    /** Lock screen <-> always-on display: the digits change weight smoothly over this time. */
+    private static final long WEIGHT_MS = 650;
+    /** Corner (notification) clock: top-left position and digit height, as fractions of the screen. */
+    private static final float CORNER_LEFT = 0.075f, CORNER_TOP = 0.125f, CORNER_DIGITS = 0.15f;
 
     static final class State {
         final ClockRenderer normal = new ClockRenderer();
@@ -55,6 +59,12 @@ final class InPlaceClock {
         boolean drewInOnDraw;
         long nextTick;
         String describe = "";
+        float cornerDigits;
+        /** Extra upward shift so the corner clock fits inside the view when ColorOS puts the view lower down. */
+        float cornerShift;
+        boolean shiftPosted;
+        int weightFrom = -1, weightTo = -1;
+        long weightAt;
     }
 
     private static final Map<View, State> states = Collections.synchronizedMap(new WeakHashMap<>());
@@ -135,10 +145,10 @@ final class InPlaceClock {
         boolean lineBox = !measure && v.getHeight() > 0 && v.getHeight() < v.getWidth() * 0.6f;
         boolean dateInside = plugin || (date != null && Views.isAncestor(v, date));
         boolean withDate = (cfg.clockDate || dateInside) && !compact && !lineBox;
-        boolean changed = s.normal.style(Fonts.clock(m, c, cfg.clockRound, false), textSize, Fonts.date(m, c),
-                dateSize, palette, withDate, cfg.clockOverlap / 100f, cfg.clockGap / 1000f);
-        changed |= s.aod.style(Fonts.clock(m, c, cfg.clockRound, true), textSize, Fonts.date(m, c),
-                dateSize, palette, withDate, cfg.clockOverlap / 100f, cfg.clockGap / 1000f);
+        // One renderer for both: its weight moves between the lock screen and AOD cuts (see draw).
+        boolean changed = s.normal.style(Fonts.clock(m, c, cfg.clockRound, false), cfg.clockRound, textSize,
+                Fonts.date(m, c), dateSize, palette, withDate, cfg.clockOverlap / 100f, cfg.clockGap / 1000f);
+        s.cornerDigits = screenMin * CORNER_DIGITS * cfg.clockScale / 100f;
         int offset = Math.round(Views.dp(v, cfg.clockOffsetDp));
         changed |= s.compact != compact || s.offsetPx != offset || s.date != date || s.hideDate != cfg.clockDate
                 || s.measure != measure;
@@ -154,12 +164,10 @@ final class InPlaceClock {
         s.measure = measure;
         s.plugin = plugin;
         s.dateInside = dateInside;
-        // The position setting fine-tunes the big clock up or down from where ColorOS puts it.
-        float shift = compact ? 0 : offset;
-        if (shift != s.appliedShift) {
-            v.setTranslationY(v.getTranslationY() - s.appliedShift + shift);
-            s.appliedShift = shift;
-        }
+        // The position setting fine-tunes the big clock up or down from where ColorOS puts it; the corner clock
+        // only moves the view if ColorOS placed it too low for the corner (worked out while drawing).
+        if (!compact) s.cornerShift = 0;
+        applyShift(s, v, compact ? s.cornerShift : offset);
         s.aodProcess = m.inAodApp();
         if (fresh) {
             // Group views usually skip draw(); make sure ColorOS's clock goes through it so we can replace it.
@@ -170,15 +178,16 @@ final class InPlaceClock {
             states.put(v, s);
             rebuildIndex();
         }
-        // The big clock carries its own date underneath; in the notification layout ColorOS's date stays.
+        // The big clock carries its own date underneath, and the corner clock its own date under it, so ColorOS's
+        // date only stays in the system AOD's own small clock box.
         if (date != null) {
-            float a = withDate ? 0f : 1f;
+            float a = withDate || compact ? 0f : 1f;
             if (date.getTransitionAlpha() != a) date.setTransitionAlpha(a);
         }
         if (fresh || changed) {
             s.describe = Views.describe(v);
             m.info("In-place clock " + (fresh ? "bound" : "updated") + ": " + s.describe
-                    + (compact ? " | one line (notifications showing)" : " | two rows")
+                    + (compact ? " | one line in the top-left corner (notifications showing)" : " | two rows")
                     + (measure ? "" : " | keeps ColorOS size")
                     + " | date " + (date == null ? "none (own date)" : Views.describe(date))
                     + " | colors " + Palette.hex(palette.clockLight) + "/" + Palette.hex(palette.clockDark));
@@ -196,6 +205,36 @@ final class InPlaceClock {
         if (s.restoreWillNotDraw) v.setWillNotDraw(true);
         v.requestLayout();
         v.invalidate();
+    }
+
+    private static void applyShift(State s, View v, float shift) {
+        if (shift == s.appliedShift) return;
+        v.setTranslationY(v.getTranslationY() - s.appliedShift + shift);
+        s.appliedShift = shift;
+    }
+
+    /** Lock screen digits are bold, the AOD ones thin: animate the weight between the two instead of jumping. */
+    private static void updateWeight(State s, View v, boolean aodStyle) {
+        int target = aodStyle ? Fonts.WEIGHT_AOD : Fonts.WEIGHT_LOCK;
+        long now = SystemClock.uptimeMillis();
+        if (s.weightTo < 0) {
+            s.weightFrom = s.weightTo = target;
+        } else if (s.weightTo != target) {
+            s.weightFrom = currentWeight(s, now);
+            s.weightTo = target;
+            s.weightAt = now;
+        }
+        int w = currentWeight(s, now);
+        s.normal.setWeight(w);
+        if (w != s.weightTo) v.postInvalidateOnAnimation();
+    }
+
+    private static int currentWeight(State s, long now) {
+        float t = Math.min(1f, (now - s.weightAt) / (float) WEIGHT_MS);
+        if (t >= 1f) return s.weightTo;
+        // Ease in-out (cubic), so the stroke thins gently at both ends.
+        float e = t < 0.5f ? 4 * t * t * t : 1 - (float) Math.pow(-2 * t + 2, 3) / 2;
+        return Math.round(s.weightFrom + (s.weightTo - s.weightFrom) * e);
     }
 
     // Draw hooks. View.draw / a class's own draw replace everything; onDraw then dispatchDraw run when only those
@@ -219,14 +258,13 @@ final class InPlaceClock {
     private static void draw(State s, View v, Canvas canvas, String via) {
         s.draws++;
         boolean aodStyle = s.aodProcess || (s.plugin && !interactive(v.getContext()));
-        ClockRenderer r = aodStyle ? s.aod : s.normal;
+        ClockRenderer r = s.normal;
+        updateWeight(s, v, aodStyle);
         String[] hm = time(v);
         s.normal.setTime(hm[0], hm[1]);
-        s.aod.setTime(hm[0], hm[1]);
         String d = s.date != null ? Views.text(s.date).trim().replace('\n', ' ') : "";
         if (d.isEmpty()) d = DateText.format(v.getContext());
         s.normal.setDate(d);
-        s.aod.setDate(d);
 
         int left = v.getPaddingLeft(), top = v.getPaddingTop();
         float w = v.getWidth() - left - v.getPaddingRight();
@@ -242,21 +280,23 @@ final class InPlaceClock {
         canvas.translate(v.getScrollX() + left, v.getScrollY() + top);
         float maxLine = v instanceof TextView ? ((TextView) v).getTextSize() * 1.15f : h;
         // Where ColorOS's box keeps its own size (the system AOD), a wide box gets the one-line clock.
-        boolean compact = s.compact || (!s.measure && h < w * 0.6f);
-        boolean wasCompact = s.wasCompact || (!s.measure && h < w * 0.6f);
-        // Short cross-fade when switching between the two-row and one-row clock.
+        boolean lineBox = !s.measure && h < w * 0.6f;
+        int mode = s.compact ? MODE_CORNER : lineBox ? MODE_LINE : MODE_BIG;
+        int was = s.wasCompact ? MODE_CORNER : lineBox ? MODE_LINE : MODE_BIG;
+        float[] corner = mode == MODE_CORNER || was == MODE_CORNER ? cornerOrigin(s, v, left, top) : null;
+        // Short cross-fade when switching between the two-row and the corner clock.
         long since = SystemClock.uptimeMillis() - s.switchedAt;
-        if (since < FADE_MS && wasCompact != compact) {
+        if (since < FADE_MS && was != mode) {
             float t = since / (float) FADE_MS;
-            int a = canvas.saveLayerAlpha(0, 0, w, h, Math.round(255 * (1 - t)));
-            drawMode(r, canvas, w, h, wasCompact, maxLine, s.dateInside);
+            int a = canvas.saveLayerAlpha(null, Math.round(255 * (1 - t)));
+            drawMode(r, canvas, w, h, was, maxLine, s, corner);
             canvas.restoreToCount(a);
-            a = canvas.saveLayerAlpha(0, 0, w, h, Math.round(255 * t));
-            drawMode(r, canvas, w, h, compact, maxLine, s.dateInside);
+            a = canvas.saveLayerAlpha(null, Math.round(255 * t));
+            drawMode(r, canvas, w, h, mode, maxLine, s, corner);
             canvas.restoreToCount(a);
             v.postInvalidateOnAnimation();
         } else {
-            drawMode(r, canvas, w, h, compact, maxLine, s.dateInside);
+            drawMode(r, canvas, w, h, mode, maxLine, s, corner);
         }
         canvas.restoreToCount(save);
     }
@@ -270,10 +310,44 @@ final class InPlaceClock {
         v.postInvalidateDelayed(next - now);
     }
 
-    private static void drawMode(ClockRenderer r, Canvas canvas, float w, float h, boolean compact, float maxLine,
-                                 boolean dateAbove) {
-        if (compact) {
-            if (dateAbove) r.drawLineWithDate(canvas, w, h, maxLine);
+    private static final int MODE_BIG = 0, MODE_LINE = 1, MODE_CORNER = 2;
+
+    /**
+     * Where the corner clock's top-left goes, in the view's content coordinates: a fixed spot under the status bar
+     * on the left of the screen. If ColorOS put the view below that spot, the view is shifted up once so the clock
+     * isn't cut off at the view's top edge.
+     */
+    private static float[] cornerOrigin(State s, View v, int padLeft, int padTop) {
+        android.util.DisplayMetrics dm = v.getResources().getDisplayMetrics();
+        int[] loc = new int[2];
+        v.getLocationOnScreen(loc);
+        float x = dm.widthPixels * CORNER_LEFT - loc[0] - padLeft;
+        float y = dm.heightPixels * CORNER_TOP - loc[1] - padTop;
+        // Worked out from where the view sits without our own shift, so it never adds up; skipped while ColorOS
+        // itself is moving the view (unlock and doze animations).
+        float desired = Math.min(0f, s.cornerShift + y);
+        boolean ownMoveOnly = Math.abs(v.getTranslationY() - s.appliedShift) < 0.5f;
+        if (s.compact && ownMoveOnly && Math.abs(desired - s.cornerShift) > 2 && !s.shiftPosted) {
+            s.shiftPosted = true;
+            v.post(() -> {
+                s.shiftPosted = false;
+                if (!s.compact) return;
+                s.cornerShift = desired;
+                applyShift(s, v, s.cornerShift);
+                v.invalidate();
+            });
+        }
+        return new float[]{Math.max(0, x), Math.max(0, y)};
+    }
+
+    private static void drawMode(ClockRenderer r, Canvas canvas, float w, float h, int mode, float maxLine, State s,
+                                 float[] corner) {
+        if (mode == MODE_CORNER) {
+            r.drawCorner(canvas, corner[0], corner[1], s.cornerDigits);
+            return;
+        }
+        if (mode == MODE_LINE) {
+            if (s.dateInside) r.drawLineWithDate(canvas, w, h, maxLine);
             else r.drawLineFitted(canvas, w, h, maxLine);
             return;
         }

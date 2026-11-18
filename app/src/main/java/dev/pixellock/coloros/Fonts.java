@@ -22,9 +22,13 @@ final class Fonts {
 
     private Fonts() { }
 
+    /** Digit weights: bold on the lock screen, a lighter cut on the always-on display. */
+    static final int WEIGHT_LOCK = 900;
+    static final int WEIGHT_AOD = 450;
+
     /** Chunky clock digits. round = 0..100 (ROND axis). The always-on display gets a lighter cut. */
     static Typeface clock(HookEntry m, Context c, int round, boolean aod) {
-        int weight = aod ? 450 : 900;
+        int weight = aod ? WEIGHT_AOD : WEIGHT_LOCK;
         return get(m, c, "'wght' " + weight + ", 'wdth' 100, 'opsz' 144, 'ROND' " + round,
                 Typeface.create(Typeface.SANS_SERIF, weight, false));
     }

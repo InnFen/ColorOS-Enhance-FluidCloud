@@ -90,7 +90,7 @@ final class ClockController {
         float textSize = screenW * 0.40f * cfg.clockScale / 100f;
         float dateSize = dateView != null && dateView.getTextSize() > 0
                 ? dateView.getTextSize() : Views.dp(root, 17) * c.getResources().getConfiguration().fontScale;
-        view.style(Fonts.clock(m, c, cfg.clockRound, aod), textSize, Fonts.date(m, c), dateSize, palette, hideDate,
+        view.style(Fonts.clock(m, c, cfg.clockRound, aod), cfg.clockRound, textSize, Fonts.date(m, c), dateSize, palette, hideDate,
                 cfg.clockOverlap / 100f, cfg.clockGap / 1000f);
 
         if (!added) {

@@ -20,9 +20,9 @@ final class PixelClockView extends View {
 
     void setTimeSource(Runnable source) { timeSource = source; }
 
-    void style(Typeface clockFace, float textSize, Typeface dateFace, float dateSize, Palette p, boolean withDate,
-               float overlap, float gap) {
-        if (r.style(clockFace, textSize, dateFace, dateSize, p, withDate, overlap, gap)) invalidate();
+    void style(Typeface clockFace, int round, float textSize, Typeface dateFace, float dateSize, Palette p,
+               boolean withDate, float overlap, float gap) {
+        if (r.style(clockFace, round, textSize, dateFace, dateSize, p, withDate, overlap, gap)) invalidate();
     }
 
     void setCompact(boolean line) {
