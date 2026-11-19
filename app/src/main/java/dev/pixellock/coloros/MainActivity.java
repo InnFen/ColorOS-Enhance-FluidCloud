@@ -70,13 +70,15 @@ public final class MainActivity extends Activity {
 
         section("時鐘");
         toggle(prefs, Config.CLOCK, "Pixel 雙行時鐘", "時鐘換成上下兩行大字，顏色跟隨系統取色", true);
+        slider(prefs, Config.CLOCK_TONE, "時鐘深淺（0 最淺，9 最深）", "", Config.TONE_MIN, Config.TONE_MAX,
+                Config.CLOCK_TONE_DEFAULT);
         slider(prefs, Config.CLOCK_SCALE, "時鐘大小", "%", Config.SCALE_MIN, Config.SCALE_MAX, Config.SCALE_DEFAULT);
         slider(prefs, Config.CLOCK_OFFSET, "上下微調（0 為系統原位置）", "dp", Config.OFFSET_MIN, Config.OFFSET_MAX, Config.OFFSET_DEFAULT);
         slider(prefs, Config.CLOCK_ROUND, "數字圓潤度", "", Config.ROUND_MIN, Config.ROUND_MAX, Config.ROUND_DEFAULT);
         slider(prefs, Config.CLOCK_OVERLAP, "數字重疊", "%", Config.OVERLAP_MIN, Config.OVERLAP_MAX, Config.OVERLAP_DEFAULT);
         slider(prefs, Config.CLOCK_GAP, "重疊處鏤空間隙", "", Config.GAP_MIN, Config.GAP_MAX, Config.GAP_DEFAULT);
         toggle(prefs, Config.CLOCK_DATE, "日期移到時鐘下方", "關掉則保留原本在時鐘上方的日期", true);
-        toggle(prefs, Config.CLOCK_AVOID, "有通知時改成一行", "通知或流體雲卡片出現時，時鐘縮小成一行收到左上角，日期在下面；沒通知時回到兩行", true);
+        toggle(prefs, Config.CLOCK_AVOID, "有通知時改成一行", "通知或流體雲卡片出現時，時鐘縮小成一行收到左上角，日期在下面；沒通知或只有底部通知膠囊時維持兩行", true);
         toggle(prefs, Config.CLOCK_RESERVE, "為大時鐘預留空間（備用模式）", "只在系統時鐘不是一般文字元件時用到", true);
         toggle(prefs, Config.AOD, "全景息屏的時鐘也用 Pixel 樣式", "全景息屏和鎖屏是同一個時鐘，關掉則息屏時維持原版", true);
 

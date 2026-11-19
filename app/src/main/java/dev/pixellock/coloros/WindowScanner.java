@@ -201,7 +201,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         Set<View> skip = new HashSet<>();
         if (clock != null) skip.add(clock.view);
         List<View> tree = Views.visibleTree(root, skip);
-        Palette palette = Palette.of(root.getContext(), cfg.shortcutTone);
+        Palette palette = Palette.of(root.getContext(), cfg.shortcutTone, cfg.clockTone);
 
         // Digit keys (bouncer / PIN pad) are off limits.
         Set<View> keypads = findKeypads(tree);
@@ -499,17 +499,28 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
      * (ExpandableNotificationRow) and live cards count, never any wide box with a background, so the clock goes
      * back to two rows as soon as the last notification is gone.
      */
+    /** ColorOS's capsule notification style: the pill and anything inside it. */
+    private static boolean inCapsule(View v) {
+        for (Object o = v; o instanceof View; o = ((View) o).getParent()) {
+            if (o.getClass().getName().toLowerCase(Locale.ROOT).contains("capsule")) return true;
+        }
+        return false;
+    }
+
     private String compactReason(List<View> tree, View clockView, int screenW, int screenH) {
         float minH = Views.dp(root, 36);
         for (View v : tree) {
             if (v == clockView || Views.isAncestor(clockView, v) || Views.isAncestor(v, clockView)) continue;
             if (v.getHeight() < minH || !Views.shownOnThisThread(v) || !effectivelyVisible(v, 0.2f)) continue;
             Rect r = Views.screen(v);
-            if (r.bottom <= screenH * 0.1f || r.top >= screenH * 0.92f) continue;
+            // The bottom quarter holds the shortcut buttons and ColorOS's notification capsule ("9 notifications"
+            // pill); nothing there reaches the clock, so it never collapses it.
+            if (r.bottom <= screenH * 0.1f || r.top >= screenH * 0.75f) continue;
             String chain = classChain(v);
+            if (inCapsule(v)) continue;
             if (chain.contains("ExpandableNotificationRow")) return "notification " + v.getClass().getSimpleName();
             // Everything else in the lock screen stack is an ExpandableView too: fluid cloud cards
-            // (NotificationSeedingContainer), the media player (MediaContainerView), custom cards and capsules.
+            // (NotificationSeedingContainer), the media player (MediaContainerView) and custom cards.
             // Only the shelf, footer and section headers are left out.
             if (chain.contains("ExpandableView") && !STACK_DECOR.matcher(chain).find()) {
                 return "card " + v.getClass().getSimpleName();
