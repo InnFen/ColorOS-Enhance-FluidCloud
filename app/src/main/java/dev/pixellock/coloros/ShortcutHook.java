@@ -73,7 +73,7 @@ final class ShortcutHook {
         Config cfg = m.config;
         if (!cfg.shortcuts) { restore(); return; }
         active = true;
-        Palette p = Palette.of(iv.getContext(), cfg.shortcutTone, cfg.clockTone);
+        Palette p = Palette.of(iv.getContext(), cfg.shortcutTone, cfg.clockTone, cfg.aodTone);
         boolean on = iv.isActivated() || iv.isSelected();
         int bg = on ? p.shortcutBgActive : p.shortcutBg;
         int icon = on ? p.shortcutIconActive : p.shortcutIcon;

@@ -201,7 +201,7 @@ final class WindowScanner implements ViewTreeObserver.OnGlobalLayoutListener, Vi
         Set<View> skip = new HashSet<>();
         if (clock != null) skip.add(clock.view);
         List<View> tree = Views.visibleTree(root, skip);
-        Palette palette = Palette.of(root.getContext(), cfg.shortcutTone, cfg.clockTone);
+        Palette palette = Palette.of(root.getContext(), cfg.shortcutTone, cfg.clockTone, cfg.aodTone);
 
         // Digit keys (bouncer / PIN pad) are off limits.
         Set<View> keypads = findKeypads(tree);

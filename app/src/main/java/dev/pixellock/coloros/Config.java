@@ -20,7 +20,7 @@ public final class Config {
     public static final String AOD = "aod_enabled";
     public static final String CLOCK_OVERLAP = "clock_overlap";
     public static final String CLOCK_GAP = "clock_gap";
-    public static final String LIGHT_CARDS = "light_cards";
+    public static final String AOD_TONE = "aod_tone";
     public static final String DUMP = "dump_views";
 
     public static final int SCALE_MIN = 50, SCALE_MAX = 150, SCALE_DEFAULT = 100;
@@ -33,6 +33,8 @@ public final class Config {
     public static final int TONE_MIN = 0, TONE_MAX = 9, TONE_DEFAULT = 1;
     /** Clock tone index: 7 = accent1 600, the deep look of earlier versions. */
     public static final int CLOCK_TONE_DEFAULT = 7;
+    /** AOD clock tone index: 2 = accent1 100, the pale look of earlier versions. */
+    public static final int AOD_TONE_DEFAULT = 2;
 
     public final boolean clock;
     public final int clockScale;
@@ -47,7 +49,7 @@ public final class Config {
     public final int clockTone;
     public final boolean clockAvoid;
     public final boolean aod;
-    public final boolean lightCards;
+    public final int aodTone;
     public final boolean dump;
 
     private Config(Map<String, ?> m) {
@@ -64,7 +66,7 @@ public final class Config {
         clockTone = clamp(integer(m, CLOCK_TONE, CLOCK_TONE_DEFAULT), TONE_MIN, TONE_MAX);
         clockAvoid = bool(m, CLOCK_AVOID, true);
         aod = bool(m, AOD, true);
-        lightCards = bool(m, LIGHT_CARDS, true);
+        aodTone = clamp(integer(m, AOD_TONE, AOD_TONE_DEFAULT), TONE_MIN, TONE_MAX);
         dump = bool(m, DUMP, false);
     }
 
@@ -90,6 +92,6 @@ public final class Config {
         return "clock=" + clock + " scale=" + clockScale + " offsetDp=" + clockOffsetDp + " round=" + clockRound
                 + " overlap=" + clockOverlap + " gap=" + clockGap
                 + " reserve=" + clockReserve + " date=" + clockDate + " shortcuts=" + shortcuts
-                + " tone=" + shortcutTone + " clockTone=" + clockTone + " avoid=" + clockAvoid + " aod=" + aod + " lightCards=" + lightCards + " dump=" + dump;
+                + " tone=" + shortcutTone + " clockTone=" + clockTone + " avoid=" + clockAvoid + " aod=" + aod + " aodTone=" + aodTone + " dump=" + dump;
     }
 }

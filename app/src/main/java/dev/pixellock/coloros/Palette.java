@@ -34,13 +34,16 @@ final class Palette {
     };
     static final int[] TONE_NAMES = {10, 50, 100, 200, 300, 400, 500, 600, 700, 800};
 
-    private Palette(Context c, int tone, int clockTone) {
+    private Palette(Context c, int tone, int clockTone, int aodTone) {
         night = systemNight(c);
         // Clock: two neighbouring accent1 tones like the Pixel lock screen clock, the date one step darker.
         // The same colours in light and dark mode; clockTone picks how light or dark they are.
-        aodLight = color(c, android.R.color.system_accent1_100, 0xFFC8FFF4);
-        aodDark = color(c, android.R.color.system_accent1_200, 0xFF9DE0D0);
-        aodDate = color(c, android.R.color.system_accent1_50, Color.WHITE);
+        // Always-on display: the same pair at its own tone, the date one step lighter so it reads on black.
+        int a = Math.max(0, Math.min(TONES.length - 1, aodTone));
+        int aSecond = a < TONES.length - 1 ? a + 1 : a - 1;
+        aodLight = color(c, TONES[a], 0xFFC8FFF4);
+        aodDark = color(c, TONES[aSecond], 0xFF9DE0D0);
+        aodDate = color(c, TONES[Math.max(0, Math.min(a, aSecond) - 1)], Color.WHITE);
         int k = Math.max(0, Math.min(TONES.length - 1, clockTone));
         int second = k < TONES.length - 1 ? k + 1 : k - 1;
         int third = Math.min(TONES.length - 1, Math.max(k, second) + 1);
@@ -58,7 +61,7 @@ final class Palette {
         shortcutBgActive = color(c, t <= 4 ? android.R.color.system_accent1_600 : android.R.color.system_accent1_100,
                 0xFF3D5F90);
         shortcutIconActive = Color.luminance(shortcutBgActive) > 0.4f ? iconDark : iconLight;
-        signature = clockLight * 31 + shortcutBg * 17;
+        signature = clockLight * 31 + shortcutBg * 17 + aodLight * 7;
     }
 
     /** Color shown while a button is held down: a step toward the switched-on tone. */
@@ -114,8 +117,8 @@ final class Palette {
     static void invalidate() { version++; }
 
     /** Cached palette; rebuilt whenever light/dark mode, the dynamic colours or the configuration change. */
-    static synchronized Palette of(Context context, int tone, int clockTone) {
-        int toneKey = tone * 100 + clockTone;
+    static synchronized Palette of(Context context, int tone, int clockTone, int aodTone) {
+        int toneKey = tone * 10000 + clockTone * 100 + aodTone;
         if (!listening) {
             listening = true;
             try {
@@ -141,7 +144,7 @@ final class Palette {
                         new Configuration(android.content.res.Resources.getSystem().getConfiguration()));
             } catch (Throwable ignored) { }
             Palette old = cached;
-            cached = new Palette(fresh, tone, clockTone);
+            cached = new Palette(fresh, tone, clockTone, aodTone);
             cachedVersion = version;
             cachedTone = toneKey;
             cachedKey = key;

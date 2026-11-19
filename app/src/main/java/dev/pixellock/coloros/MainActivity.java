@@ -81,14 +81,13 @@ public final class MainActivity extends Activity {
         toggle(prefs, Config.CLOCK_AVOID, "有通知時改成一行", "通知或流體雲卡片出現時，時鐘縮小成一行收到左上角，日期在下面；沒通知或只有底部通知膠囊時維持兩行", true);
         toggle(prefs, Config.CLOCK_RESERVE, "為大時鐘預留空間（備用模式）", "只在系統時鐘不是一般文字元件時用到", true);
         toggle(prefs, Config.AOD, "全景息屏的時鐘也用 Pixel 樣式", "全景息屏和鎖屏是同一個時鐘，關掉則息屏時維持原版", true);
+        slider(prefs, Config.AOD_TONE, "息屏時鐘深淺（0 最淺，9 最深）", "", Config.TONE_MIN, Config.TONE_MAX,
+                Config.AOD_TONE_DEFAULT);
 
         section("快捷按鈕");
         toggle(prefs, Config.SHORTCUTS, "取色色塊背景", "左右下角按鈕換成跟隨系統色的圓形色塊，圖示自動深淺", true);
         slider(prefs, Config.SHORTCUT_TONE, "按鈕深淺（0 最淺，9 最深）", "", Config.TONE_MIN, Config.TONE_MAX,
                 Config.TONE_DEFAULT);
-
-        section("流體雲");
-        toggle(prefs, Config.LIGHT_CARDS, "淺色模式用淺色卡片", "鎖屏和通知欄的流體雲卡片跟隨系統深淺色；狀態列膠囊和息屏時維持黑色", true);
 
         section("診斷");
         toggle(prefs, Config.DUMP, "輸出鎖屏結構到 LSPosed 日誌",
